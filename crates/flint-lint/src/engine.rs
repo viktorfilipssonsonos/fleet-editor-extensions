@@ -308,7 +308,7 @@ impl Default for Linter {
 /// Used to determine how to parse a YAML file before attempting deserialization.
 /// This prevents misidentification (e.g., labels parsed as policies).
 #[derive(Debug, PartialEq)]
-enum FileType {
+pub(crate) enum FileType {
     FleetConfig,  // default.yml, fleets/*.yml, teams/*.yml, unassigned.yml
     Policies,     // */policies/*.yml
     Queries,      // */queries/*.yml, */reports/*.yml
@@ -319,7 +319,7 @@ enum FileType {
 }
 
 /// Detect file type from path using directory names and file name patterns.
-fn detect_file_type(path: &Path) -> FileType {
+pub(crate) fn detect_file_type(path: &Path) -> FileType {
     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     // Agent options files
@@ -903,14 +903,17 @@ policies:
 
     #[test]
     fn test_label_host_vitals_no_error() {
+        // As of the Fleet version this code tracks, parseHostVitalCriteria only
+        // registers `end_user_idp_group` and `end_user_idp_department`, and
+        // rejects and/or composites outright. Keep this test aligned with what
+        // Fleet actually parses today.
         let yaml = r#"
-- name: macOS 15 (Sequoia)
-  description: Hosts with macOS 15
-  platform: darwin
+- name: Engineering
+  description: Hosts assigned to the Engineering IdP group
   label_membership_type: host_vitals
-  host_vitals:
-    os_name: macOS
-    os_arch: arm64
+  criteria:
+    vital: end_user_idp_department
+    value: Engineering
 "#;
         let label_dir = tempfile::tempdir().unwrap();
         let label_path = label_dir.path().join("labels");
@@ -930,14 +933,12 @@ policies:
     #[test]
     fn test_label_criteria_no_error() {
         let yaml = r#"
-- name: macOS 15+
-  description: Hosts running macOS 15 or later
-  platform: darwin
+- name: Engineering IdP group
+  description: Hosts whose end user is in the Engineering IdP group
   label_membership_type: host_vitals
   criteria:
-    vital: os_version
-    value: "15.0"
-    operator: ">="
+    vital: end_user_idp_group
+    value: Engineering
 "#;
         let label_dir = tempfile::tempdir().unwrap();
         let label_path = label_dir.path().join("labels");

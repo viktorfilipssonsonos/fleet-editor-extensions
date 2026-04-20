@@ -751,4 +751,87 @@ org_settings:
 "#;
         assert!(check(label_yaml, "lib/labels/test.yml").is_empty());
     }
+
+    // ---- Webhook settings per-fleet vs org-level ----
+
+    #[test]
+    fn test_per_fleet_failing_policies_webhook_accepted() {
+        // Per Fleet docs (yaml-files.md:1102), failing_policies_webhook can be
+        // configured per-fleet under `settings.webhook_settings`.
+        let yaml = r#"
+name: Workstations
+settings:
+  webhook_settings:
+    failing_policies_webhook:
+      enable_failing_policies_webhook: true
+      destination_url: https://example.org/hook
+      host_batch_size: 0
+"#;
+        let errors = check(yaml, "fleets/workstations.yml");
+        assert!(
+            errors.is_empty(),
+            "Per-fleet failing_policies_webhook should be accepted: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_per_fleet_activities_and_host_status_webhook_accepted() {
+        let yaml = r#"
+name: Workstations
+settings:
+  webhook_settings:
+    activities_webhook:
+      enable_activities_webhook: true
+      destination_url: https://example.org/a
+    host_status_webhook:
+      enable_host_status_webhook: true
+      destination_url: https://example.org/h
+      days_count: 7
+      host_percentage: 25
+"#;
+        let errors = check(yaml, "fleets/workstations.yml");
+        assert!(
+            errors.is_empty(),
+            "Per-fleet activities_webhook and host_status_webhook should be accepted: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_per_fleet_vulnerabilities_webhook_rejected() {
+        // Per Fleet docs (yaml-files.md:1151): vulnerabilities_webhook is org-only.
+        let yaml = r#"
+name: Workstations
+settings:
+  webhook_settings:
+    vulnerabilities_webhook:
+      enable_vulnerabilities_webhook: true
+      destination_url: https://example.org/v
+"#;
+        let errors = check(yaml, "fleets/workstations.yml");
+        assert!(
+            errors.iter().any(|e| e.message.contains("vulnerabilities_webhook")),
+            "Expected vulnerabilities_webhook to be flagged as unknown under per-fleet settings, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_org_vulnerabilities_webhook_accepted() {
+        let yaml = r#"
+org_settings:
+  webhook_settings:
+    vulnerabilities_webhook:
+      enable_vulnerabilities_webhook: true
+      destination_url: https://example.org/v
+      host_batch_size: 0
+"#;
+        let errors = check(yaml, "default.yml");
+        assert!(
+            errors.is_empty(),
+            "Org-level vulnerabilities_webhook should be accepted: {:?}",
+            errors
+        );
+    }
 }

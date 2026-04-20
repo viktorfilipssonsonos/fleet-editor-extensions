@@ -37,35 +37,18 @@
       }
     },
     "criteria": {
-      "$ref": "#/$defs/criteria",
-      "description": "Criteria for host_vitals labels (required when label_membership_type is 'host_vitals')"
-    }
-  },
-  "$defs": {
-    "criteria": {
       "type": "object",
+      "description": "Criteria for host_vitals labels (required when label_membership_type is 'host_vitals'). A single {vital, value} leaf — and/or composites are not yet supported.",
+      "required": ["vital", "value"],
       "properties": {
         "vital": {
           "type": "string",
-          "description": "Host vital identifier (e.g. os_version, os_name, os_arch)"
+          "description": "The type of host vital. Fleet registers end_user_idp_group and end_user_idp_department.",
+          "enum": ["end_user_idp_group", "end_user_idp_department"]
         },
         "value": {
-          "description": "Expected vital value"
-        },
-        "operator": {
           "type": "string",
-          "description": "Comparison operator",
-          "enum": ["==", "!=", ">", ">=", "<", "<="]
-        },
-        "and": {
-          "type": "array",
-          "description": "All nested criteria must match",
-          "items": { "$ref": "#/$defs/criteria" }
-        },
-        "or": {
-          "type": "array",
-          "description": "Any nested criteria must match",
-          "items": { "$ref": "#/$defs/criteria" }
+          "description": "Hosts with vital data matching this value will be added to the label."
         }
       },
       "additionalProperties": false

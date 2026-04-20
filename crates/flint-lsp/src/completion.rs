@@ -443,12 +443,7 @@ fn context_path_to_completion_context(path: Option<&str>) -> CompletionContext {
     match path {
         Some(p) if p == "policies" || p.ends_with(".policies") => CompletionContext::PolicyField,
         Some(p) if p == "queries" || p.ends_with(".queries") => CompletionContext::QueryField,
-        Some(p)
-            if p == "labels.criteria"
-                || p.ends_with(".criteria")
-                || p.contains("criteria.and")
-                || p.contains("criteria.or") =>
-        {
+        Some(p) if p == "labels.criteria" || p.ends_with(".criteria") => {
             CompletionContext::CriteriaField
         }
         Some(p) if p == "labels" || p.ends_with(".labels") => CompletionContext::LabelField,
@@ -718,30 +713,34 @@ fn complete_label_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
         .collect()
 }
 
-/// Complete host-vital criteria fields (inside labels[].criteria and nested and/or).
+/// Complete host-vital criteria fields (inside labels[].criteria).
+///
+/// Per Fleet's REST API docs, a criteria is a single `{vital, value}` leaf.
+/// `and`/`or` are in the Go struct but rejected at parse time, so we don't
+/// suggest them here.
 fn complete_criteria_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
     if let Some(key) = get_key_at_cursor(line, col_idx) {
-        if key.as_str() == "operator" {
-            return [
-                ("==", "Equal to"),
-                ("!=", "Not equal to"),
-                (">", "Greater than"),
-                (">=", "Greater than or equal"),
-                ("<", "Less than"),
-                ("<=", "Less than or equal"),
-            ]
-            .iter()
-            .map(|(v, d)| create_value_completion(v, d))
-            .collect();
+        if key.as_str() == "vital" {
+            return vec![
+                create_value_completion(
+                    "end_user_idp_group",
+                    "Host's IdP group (from end-user SSO)",
+                ),
+                create_value_completion(
+                    "end_user_idp_department",
+                    "Host's IdP department (from end-user SSO)",
+                ),
+            ];
         }
     }
 
     let fields = [
-        ("vital", "Host vital identifier (e.g. os_version)", false),
-        ("value", "Expected vital value", false),
-        ("operator", "Comparison operator (==, !=, >=, <=, >, <)", false),
-        ("and", "All nested criteria must match", false),
-        ("or", "Any nested criteria must match", false),
+        (
+            "vital",
+            "Host vital identifier (end_user_idp_group or end_user_idp_department)",
+            true,
+        ),
+        ("value", "Hosts whose vital matches this value join the label", true),
     ];
 
     fields

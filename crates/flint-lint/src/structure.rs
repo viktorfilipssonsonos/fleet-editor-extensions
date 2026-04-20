@@ -303,6 +303,15 @@ fn policy_inline_strict() -> SchemaNode {
         ("labels_include_all", array(leaf())),
         ("labels_exclude_any", array(leaf())),
         ("run_script", mapping(vec![("path", leaf())])),
+        // Patch policy fields (yaml-files.md:141-149). `type: patch` marks a
+        // patch policy; `fleet_maintained_app_slug` selects which FMA to track.
+        ("type", leaf()),
+        ("fleet_maintained_app_slug", leaf()),
+        // install_software can be either:
+        //   - a mapping {package_path | hash_sha256} for regular install-on-fail, or
+        //   - boolean `true` for patch policies to install the FMA on fail.
+        // The structural validator's Mapping arm is a no-op on non-mapping
+        // values, so a boolean `true` passes through this schema silently.
         (
             "install_software",
             mapping(vec![("package_path", leaf()), ("hash_sha256", leaf())]),
@@ -346,25 +355,17 @@ fn label_inline_strict() -> SchemaNode {
 }
 
 fn host_vital_criteria() -> SchemaNode {
-    // HostVitalCriteria is either a leaf {vital, value, operator} or a
-    // composite {and: [...]}/{or: [...]}. The structure is recursive, so
-    // we spell out 3 bounded levels and let depth 4+ fall through to
-    // open_mapping() — deeper nesting is validated permissively instead
-    // of rejected.
-    host_vital_criteria_depth(3)
-}
-
-fn host_vital_criteria_depth(remaining: u8) -> SchemaNode {
-    if remaining == 0 {
-        return open_mapping();
-    }
-    let child = host_vital_criteria_depth(remaining - 1);
+    // Per Fleet's REST API docs and the Go `parseHostVitalCriteria()`, a
+    // criteria is a single leaf {vital, value}. `and`/`or` are present in
+    // the Go struct but rejected at parse time with "And/Or criteria not
+    // supported in host vitals labels yet" — we accept them structurally
+    // so the semantic rule can emit that exact message instead of a
+    // generic "unknown key" from the structural rule.
     mapping(vec![
         ("vital", leaf()),
         ("value", leaf()),
-        ("operator", leaf()),
-        ("and", array(child.clone())),
-        ("or", array(child)),
+        ("and", array(open_mapping())),
+        ("or", array(open_mapping())),
     ])
 }
 
@@ -408,33 +409,39 @@ fn integrations_strict() -> SchemaNode {
     ])
 }
 
+// Webhook sub-schemas shared between org and per-fleet webhook settings.
+fn activities_webhook() -> SchemaNode {
+    mapping(vec![
+        ("enable_activities_webhook", boolean_leaf()),
+        ("destination_url", leaf()),
+    ])
+}
+
+fn failing_policies_webhook() -> SchemaNode {
+    mapping(vec![
+        ("enable_failing_policies_webhook", boolean_leaf()),
+        ("destination_url", leaf()),
+        ("policy_ids", array(leaf())),
+        ("host_batch_size", leaf()),
+    ])
+}
+
+fn host_status_webhook() -> SchemaNode {
+    mapping(vec![
+        ("enable_host_status_webhook", boolean_leaf()),
+        ("destination_url", leaf()),
+        ("days_count", leaf()),
+        ("host_percentage", leaf()),
+    ])
+}
+
+/// Org-level `webhook_settings`. Per Fleet docs (yaml-files.md §webhook_settings),
+/// all four webhooks plus `interval` are valid here.
 fn webhook_settings_strict() -> SchemaNode {
     mapping(vec![
-        (
-            "activities_webhook",
-            mapping(vec![
-                ("enable_activities_webhook", boolean_leaf()),
-                ("destination_url", leaf()),
-            ]),
-        ),
-        (
-            "failing_policies_webhook",
-            mapping(vec![
-                ("enable_failing_policies_webhook", boolean_leaf()),
-                ("destination_url", leaf()),
-                ("policy_ids", array(leaf())),
-                ("host_batch_size", leaf()),
-            ]),
-        ),
-        (
-            "host_status_webhook",
-            mapping(vec![
-                ("enable_host_status_webhook", boolean_leaf()),
-                ("destination_url", leaf()),
-                ("days_count", leaf()),
-                ("host_percentage", leaf()),
-            ]),
-        ),
+        ("activities_webhook", activities_webhook()),
+        ("failing_policies_webhook", failing_policies_webhook()),
+        ("host_status_webhook", host_status_webhook()),
         (
             "vulnerabilities_webhook",
             mapping(vec![
@@ -443,6 +450,19 @@ fn webhook_settings_strict() -> SchemaNode {
                 ("host_batch_size", leaf()),
             ]),
         ),
+        ("interval", leaf()),
+    ])
+}
+
+/// Per-fleet `webhook_settings` (under `settings:` / `team_settings:`).
+/// `vulnerabilities_webhook` is org-only per Fleet docs (yaml-files.md:1151,
+/// "Can only be configured for 'All fleets' (org_settings)") — omitted here
+/// so the structural rule rejects it with a clear "unknown key" error.
+fn webhook_settings_per_fleet() -> SchemaNode {
+    mapping(vec![
+        ("activities_webhook", activities_webhook()),
+        ("failing_policies_webhook", failing_policies_webhook()),
+        ("host_status_webhook", host_status_webhook()),
         ("interval", leaf()),
     ])
 }
@@ -590,7 +610,7 @@ fn team_settings_strict() -> SchemaNode {
         ),
         ("secrets", array(mapping(vec![("secret", leaf())]))),
         ("integrations", integrations_strict()),
-        ("webhook_settings", webhook_settings_strict()),
+        ("webhook_settings", webhook_settings_per_fleet()),
     ])
 }
 
@@ -872,13 +892,66 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
         "org_settings.activity_expiry_settings",
     );
 
-    // org_settings.webhook_settings children
+    // webhook_settings is valid under org_settings, settings, and team_settings
     reg.register("webhook_settings", "org_settings");
+
+    // Webhook sub-schemas shared between org and per-fleet contexts.
     reg.register("activities_webhook", "org_settings.webhook_settings");
+    reg.register("activities_webhook", "settings.webhook_settings");
+    reg.register("activities_webhook", "team_settings.webhook_settings");
     reg.register("failing_policies_webhook", "org_settings.webhook_settings");
+    reg.register("failing_policies_webhook", "settings.webhook_settings");
+    reg.register("failing_policies_webhook", "team_settings.webhook_settings");
     reg.register("host_status_webhook", "org_settings.webhook_settings");
-    reg.register("vulnerabilities_webhook", "org_settings.webhook_settings");
+    reg.register("host_status_webhook", "settings.webhook_settings");
+    reg.register("host_status_webhook", "team_settings.webhook_settings");
     reg.register("interval", "org_settings.webhook_settings");
+    reg.register("interval", "settings.webhook_settings");
+    reg.register("interval", "team_settings.webhook_settings");
+
+    // Org-only per yaml-files.md:1151 ("Can only be configured for 'All fleets'").
+    reg.register("vulnerabilities_webhook", "org_settings.webhook_settings");
+
+    // activities_webhook leaf fields
+    reg.register("enable_activities_webhook", "org_settings.webhook_settings.activities_webhook");
+    reg.register("destination_url", "org_settings.webhook_settings.activities_webhook");
+    reg.register("enable_activities_webhook", "settings.webhook_settings.activities_webhook");
+    reg.register("destination_url", "settings.webhook_settings.activities_webhook");
+    reg.register("enable_activities_webhook", "team_settings.webhook_settings.activities_webhook");
+    reg.register("destination_url", "team_settings.webhook_settings.activities_webhook");
+
+    // failing_policies_webhook leaf fields
+    reg.register("enable_failing_policies_webhook", "org_settings.webhook_settings.failing_policies_webhook");
+    reg.register("destination_url", "org_settings.webhook_settings.failing_policies_webhook");
+    reg.register("policy_ids", "org_settings.webhook_settings.failing_policies_webhook");
+    reg.register("host_batch_size", "org_settings.webhook_settings.failing_policies_webhook");
+    reg.register("enable_failing_policies_webhook", "settings.webhook_settings.failing_policies_webhook");
+    reg.register("destination_url", "settings.webhook_settings.failing_policies_webhook");
+    reg.register("policy_ids", "settings.webhook_settings.failing_policies_webhook");
+    reg.register("host_batch_size", "settings.webhook_settings.failing_policies_webhook");
+    reg.register("enable_failing_policies_webhook", "team_settings.webhook_settings.failing_policies_webhook");
+    reg.register("destination_url", "team_settings.webhook_settings.failing_policies_webhook");
+    reg.register("policy_ids", "team_settings.webhook_settings.failing_policies_webhook");
+    reg.register("host_batch_size", "team_settings.webhook_settings.failing_policies_webhook");
+
+    // host_status_webhook leaf fields
+    reg.register("enable_host_status_webhook", "org_settings.webhook_settings.host_status_webhook");
+    reg.register("destination_url", "org_settings.webhook_settings.host_status_webhook");
+    reg.register("days_count", "org_settings.webhook_settings.host_status_webhook");
+    reg.register("host_percentage", "org_settings.webhook_settings.host_status_webhook");
+    reg.register("enable_host_status_webhook", "settings.webhook_settings.host_status_webhook");
+    reg.register("destination_url", "settings.webhook_settings.host_status_webhook");
+    reg.register("days_count", "settings.webhook_settings.host_status_webhook");
+    reg.register("host_percentage", "settings.webhook_settings.host_status_webhook");
+    reg.register("enable_host_status_webhook", "team_settings.webhook_settings.host_status_webhook");
+    reg.register("destination_url", "team_settings.webhook_settings.host_status_webhook");
+    reg.register("days_count", "team_settings.webhook_settings.host_status_webhook");
+    reg.register("host_percentage", "team_settings.webhook_settings.host_status_webhook");
+
+    // vulnerabilities_webhook leaf fields (org-only)
+    reg.register("enable_vulnerabilities_webhook", "org_settings.webhook_settings.vulnerabilities_webhook");
+    reg.register("destination_url", "org_settings.webhook_settings.vulnerabilities_webhook");
+    reg.register("host_batch_size", "org_settings.webhook_settings.vulnerabilities_webhook");
 
     // org_settings.mdm
     reg.register("mdm", "org_settings");
@@ -943,6 +1016,9 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("labels_exclude_any", "policies[]");
     reg.register("run_script", "policies[]");
     reg.register("install_software", "policies[]");
+    // Patch policy fields (Fleet Premium).
+    reg.register("type", "policies[]");
+    reg.register("fleet_maintained_app_slug", "policies[]");
     reg.register("path", "policies[]");
     reg.register("paths", "policies[]");
 
@@ -973,10 +1049,11 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("host_ids", "labels[]");
     reg.register("criteria", "labels[]");
     reg.register("host_vitals", "labels[]");
-    // host_vital_criteria fields (recursive, registered under labels[].criteria)
+    // host_vital_criteria fields (documented: vital + value only)
     reg.register("vital", "labels[].criteria");
     reg.register("value", "labels[].criteria");
-    reg.register("operator", "labels[].criteria");
+    // and/or are rejected by Fleet today but registered so the semantic
+    // rule owns the diagnostic instead of the structural rule.
     reg.register("and", "labels[].criteria");
     reg.register("or", "labels[].criteria");
     reg.register("path", "labels[]");

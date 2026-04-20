@@ -83,6 +83,7 @@ impl RuleSet {
         // Semantic rules
         set.add_rule(Box::new(super::semantic::LabelTargetingRule));
         set.add_rule(Box::new(super::semantic::LabelMembershipRule));
+        set.add_rule(Box::new(super::semantic::PatchPolicyRule));
         set.add_rule(Box::new(super::semantic::DateFormatRule));
         set.add_rule(Box::new(super::semantic::HashFormatRule));
         set.add_rule(Box::new(super::semantic::CategoriesRule));
@@ -118,6 +119,7 @@ impl RuleSet {
         // Semantic rules
         set.add_rule(Box::new(super::semantic::LabelTargetingRule));
         set.add_rule(Box::new(super::semantic::LabelMembershipRule));
+        set.add_rule(Box::new(super::semantic::PatchPolicyRule));
         set.add_rule(Box::new(super::semantic::DateFormatRule));
         set.add_rule(Box::new(super::semantic::HashFormatRule));
         set.add_rule(Box::new(super::semantic::CategoriesRule));
@@ -186,7 +188,13 @@ impl Rule for RequiredFieldsRule {
                             );
                         }
 
-                        if policy.query.is_none() || policy.query.as_ref().unwrap().is_empty() {
+                        // Patch policies (`type: patch`) auto-generate the query
+                        // from the Fleet-Maintained App metadata — don't require
+                        // the user to provide one (yaml-files.md:147).
+                        let is_patch = policy.policy_type.as_deref() == Some("patch");
+                        if !is_patch
+                            && (policy.query.is_none() || policy.query.as_ref().unwrap().is_empty())
+                        {
                             errors.push(
                                 LintError::error(
                                     format!(

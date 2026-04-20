@@ -102,6 +102,11 @@ pub struct Policy {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub calendar_events_enabled: Option<bool>,
+
+    /// Patch policies (`type: patch`) auto-generate their `query` from the
+    /// Fleet-Maintained App metadata, so `query` is optional when set.
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub policy_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

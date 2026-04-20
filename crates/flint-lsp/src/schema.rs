@@ -203,6 +203,45 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         },
     );
 
+    m.insert(
+        "policies.type",
+        FieldDoc {
+            name: "type",
+            description: "Policy type. `dynamic` (default) is a classic policy with an editable query. `patch` is tied to a Fleet-Maintained App via `fleet_maintained_app_slug` and auto-updates its query from the FMA metadata; on its own it only updates the policy — add `install_software: true` to install the app on failure. Patch policies require Fleet Premium.",
+            valid_values: Some(&["dynamic", "patch"]),
+            example: Some("type: patch"),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.fleet_maintained_app_slug",
+        FieldDoc {
+            name: "fleet_maintained_app_slug",
+            description: "The Fleet-Maintained App slug this patch policy tracks, typically in `name/platform` form. Required when `type: patch`. See https://github.com/fleetdm/fleet/tree/main/ee/maintained-apps/outputs for available slugs.",
+            valid_values: None,
+            example: Some("fleet_maintained_app_slug: zoom/darwin"),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.install_software",
+        FieldDoc {
+            name: "install_software",
+            description: "Trigger a software install when the policy fails. Two forms: (1) mapping `{package_path}` or `{hash_sha256}` for a regular policy installing a custom package; (2) boolean `true` on a patch policy to install the Fleet-Maintained App. Requires Fleet Premium.",
+            valid_values: None,
+            example: Some("install_software:\n  package_path: ./firefox.package.yml"),
+            required: false,
+            field_type: "object | boolean",
+            cli_hint: None,
+        },
+    );
+
     // =========================================================================
     // Query fields
     // =========================================================================
@@ -425,9 +464,9 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "labels.criteria",
         FieldDoc {
             name: "criteria",
-            description: "Criteria expression for host_vitals labels. Either a leaf `{vital, value}` or a composite `{and: [...]}`/`{or: [...]}`.",
+            description: "Criteria for adding hosts to a host_vitals label. A single `{vital, value}` leaf — `and`/`or` composites are not yet supported by Fleet.",
             valid_values: None,
-            example: Some("criteria:\n  vital: os_version\n  value: \"15.0\"\n  operator: \">=\""),
+            example: Some("criteria:\n  vital: end_user_idp_department\n  value: Engineering"),
             required: false,
             field_type: "object",
             cli_hint: None,
@@ -438,10 +477,10 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "labels.criteria.vital",
         FieldDoc {
             name: "vital",
-            description: "Host vital identifier to compare against (e.g. `os_version`, `os_name`, `os_arch`).",
-            valid_values: None,
-            example: Some("vital: os_version"),
-            required: false,
+            description: "The type of host vital to use when creating a host vital label.",
+            valid_values: Some(&["end_user_idp_group", "end_user_idp_department"]),
+            example: Some("vital: end_user_idp_department"),
+            required: true,
             field_type: "string",
             cli_hint: None,
         },
@@ -451,50 +490,11 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "labels.criteria.value",
         FieldDoc {
             name: "value",
-            description: "Value to compare the vital against. Type depends on the vital.",
+            description: "Hosts with vital data matching this value will be added to the label.",
             valid_values: None,
-            example: Some("value: \"15.0\""),
-            required: false,
-            field_type: "string | number | bool",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "labels.criteria.operator",
-        FieldDoc {
-            name: "operator",
-            description: "Comparison operator. Defaults to equality when omitted.",
-            valid_values: Some(&["==", "!=", ">", ">=", "<", "<="]),
-            example: Some("operator: \">=\""),
-            required: false,
+            example: Some("value: Engineering"),
+            required: true,
             field_type: "string",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "labels.criteria.and",
-        FieldDoc {
-            name: "and",
-            description: "List of nested criteria that must all match.",
-            valid_values: None,
-            example: Some("and:\n  - vital: os_name\n    value: macOS\n  - vital: os_arch\n    value: arm64"),
-            required: false,
-            field_type: "array of criteria",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "labels.criteria.or",
-        FieldDoc {
-            name: "or",
-            description: "List of nested criteria where any match is sufficient.",
-            valid_values: None,
-            example: Some("or:\n  - vital: os_name\n    value: macOS\n  - vital: os_name\n    value: ubuntu"),
-            required: false,
-            field_type: "array of criteria",
             cli_hint: None,
         },
     );
@@ -1226,9 +1226,61 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "team_settings.webhook_settings",
         FieldDoc {
             name: "webhook_settings",
-            description: "Webhook configuration for this fleet.",
+            description: "Per-fleet webhook configuration. Supports `activities_webhook`, `failing_policies_webhook`, `host_status_webhook`, and `interval`. `vulnerabilities_webhook` is org-only.",
             valid_values: None,
-            example: Some("webhook_settings:\n  failing_policies_webhook:\n    enable_failing_policies_webhook: true"),
+            example: Some("webhook_settings:\n  failing_policies_webhook:\n    enable_failing_policies_webhook: true\n    destination_url: https://example.com/hook"),
+            required: false,
+            field_type: "object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "webhook_settings.activities_webhook",
+        FieldDoc {
+            name: "activities_webhook",
+            description: "Fires when Fleet generates an activity. Can be configured at org or per-fleet level.",
+            valid_values: None,
+            example: Some("activities_webhook:\n  enable_activities_webhook: true\n  destination_url: https://example.org/webhook_handler"),
+            required: false,
+            field_type: "object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "webhook_settings.failing_policies_webhook",
+        FieldDoc {
+            name: "failing_policies_webhook",
+            description: "Fires for failing policies. Can be configured at org (`org_settings.webhook_settings`) or per-fleet (`settings.webhook_settings`).",
+            valid_values: None,
+            example: Some("failing_policies_webhook:\n  enable_failing_policies_webhook: true\n  destination_url: https://example.org/webhook_handler\n  policy_ids:\n    - 1\n    - 2"),
+            required: false,
+            field_type: "object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "webhook_settings.host_status_webhook",
+        FieldDoc {
+            name: "host_status_webhook",
+            description: "Fires when the percentage of offline hosts crosses a threshold. Can be configured at org or per-fleet level.",
+            valid_values: None,
+            example: Some("host_status_webhook:\n  enable_host_status_webhook: true\n  destination_url: https://example.org/webhook_handler\n  days_count: 7\n  host_percentage: 25"),
+            required: false,
+            field_type: "object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "webhook_settings.vulnerabilities_webhook",
+        FieldDoc {
+            name: "vulnerabilities_webhook",
+            description: "Fires when Fleet detects a new vulnerability. **Org-only** — per Fleet docs, can only be configured under `org_settings.webhook_settings`.",
+            valid_values: None,
+            example: Some("vulnerabilities_webhook:\n  enable_vulnerabilities_webhook: true\n  destination_url: https://example.org/webhook_handler\n  host_batch_size: 0"),
             required: false,
             field_type: "object",
             cli_hint: None,
