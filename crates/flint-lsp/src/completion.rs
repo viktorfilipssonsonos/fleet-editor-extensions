@@ -605,12 +605,25 @@ fn complete_top_level_fields(future_names: bool) -> Vec<CompletionItem> {
 fn complete_policy_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
     // Check if we're in value position
     if let Some(key) = get_key_at_cursor(line, col_idx) {
-        if key.as_str() == "platform" {
-            return complete_platform_values();
+        match key.as_str() {
+            "platform" => return complete_platform_values(),
+            "type" => {
+                return vec![
+                    create_value_completion("dynamic", "Classic policy with an editable query"),
+                    create_value_completion(
+                        "patch",
+                        "Patch policy tied to a Fleet-Maintained App (requires fleet_maintained_app_slug)",
+                    ),
+                ];
+            }
+            _ => {}
         }
     }
 
-    // Policies can be either inline definitions OR path references
+    // Policies can be either inline definitions OR path references.
+    // Automations (run_script / install_software / calendar_events_enabled)
+    // are only valid in fleet files per yaml-files.md:245 — still surfaced
+    // here because the LSP can't reliably tell which file it's editing.
     let fields = [
         ("path", "Reference to external policy YAML file", false),
         (
@@ -620,16 +633,51 @@ fn complete_policy_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
         ),
         ("name", "Policy display name (for inline definitions)", true),
         ("description", "What this policy checks", false),
-        ("query", "osquery SQL query", true),
+        ("query", "osquery SQL query (auto-generated when type: patch)", true),
         ("platform", "Target operating system", false),
-        ("critical", "Whether policy is critical", false),
+        ("critical", "Whether policy is critical (Fleet Premium)", false),
         ("resolution", "How to fix policy failures", false),
         ("team", "Team this policy belongs to", false),
         (
-            "calendar_events_enabled",
-            "Create calendar reminders",
+            "type",
+            "Policy type: dynamic (default) or patch",
             false,
         ),
+        (
+            "fleet_maintained_app_slug",
+            "FMA slug for patch policies (e.g. zoom/darwin)",
+            false,
+        ),
+        ("software_title_id", "ID of software to install on failure", false),
+        ("script_id", "ID of script to run on failure", false),
+        (
+            "install_software",
+            "Install a custom package or FMA on policy failure (fleet-only)",
+            false,
+        ),
+        (
+            "run_script",
+            "Run a script on policy failure (fleet-only)",
+            false,
+        ),
+        (
+            "calendar_events_enabled",
+            "Create calendar reminders (fleet-only)",
+            false,
+        ),
+        (
+            "conditional_access_enabled",
+            "Gate resource access on policy pass (Fleet Premium)",
+            false,
+        ),
+        (
+            "conditional_access_bypass_enabled",
+            "Allow conditional-access bypass (Fleet Premium)",
+            false,
+        ),
+        ("labels_include_any", "Target hosts with any of these labels", false),
+        ("labels_include_all", "Target hosts with all of these labels", false),
+        ("labels_exclude_any", "Exclude hosts with any of these labels", false),
     ];
 
     fields

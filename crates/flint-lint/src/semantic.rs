@@ -606,6 +606,89 @@ impl Rule for PatchPolicyRule {
 }
 
 // ============================================================================
+// Rule: Policy Automation Location
+// ============================================================================
+
+/// Flags policy automations (`run_script`, `install_software`, `calendar_events_enabled`)
+/// when configured in `default.yml`.
+///
+/// Per Fleet docs (yaml-files.md:245):
+/// > Currently, the `run_script` and `install_software` policy automations can
+/// > only be configured for a fleet (`fleets/fleet-name.yml`) or "Unassigned"
+/// > (`fleets/unassigned.yml`) … `calendar_events_enabled` can only be
+/// > configured for policies on a fleet.
+///
+/// Policies in `default.yml` are global and don't belong to a fleet, so these
+/// fields are a silent misconfiguration — Fleet server will ignore them.
+pub struct PolicyAutomationLocationRule;
+
+impl Rule for PolicyAutomationLocationRule {
+    fn name(&self) -> &'static str {
+        "policy-automation-location"
+    }
+    fn description(&self) -> &'static str {
+        "Flags run_script / install_software / calendar_events_enabled on policies in default.yml (fleet-only per Fleet docs)"
+    }
+    fn category(&self) -> &'static str {
+        "semantic"
+    }
+    fn docs_url(&self) -> Option<&'static str> {
+        Some("https://fleetdm.com/docs/configuration/yaml-files#policies")
+    }
+
+    fn check(&self, _config: &FleetConfig, file: &Path, source: &str) -> Vec<LintError> {
+        // Only applies to default.yml. Other file types (fleet files, lib
+        // files, standalone) either allow these automations or can't be
+        // reliably classified without cross-file analysis.
+        let is_default_yml = file
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|name| name == "default.yml");
+        if !is_default_yml {
+            return Vec::new();
+        }
+
+        let yaml = match parse_yaml(source) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+
+        let mut errors = Vec::new();
+
+        for item in collect_items_at_path(&yaml, &["policies"]) {
+            // Skip path/glob references — the referenced file is linted separately.
+            if (mapping_has_key(item, "path") || mapping_has_key(item, "paths"))
+                && !mapping_has_key(item, "name")
+            {
+                continue;
+            }
+
+            let name = item_display_name(item);
+
+            for field in ["run_script", "install_software", "calendar_events_enabled"] {
+                if mapping_has_key(item, field) {
+                    errors.push(
+                        LintError::error(
+                            format!(
+                                "Policy '{}' sets '{}' in default.yml, but this automation is fleet-only",
+                                name, field
+                            ),
+                            file,
+                        )
+                        .with_help(format!(
+                            "Move the policy to a fleet file (fleets/<name>.yml or fleets/unassigned.yml), or remove '{}'. See https://fleetdm.com/docs/configuration/yaml-files#policies",
+                            field
+                        )),
+                    );
+                }
+            }
+        }
+
+        errors
+    }
+}
+
+// ============================================================================
 // Rule 4: Hash Format Validation
 // ============================================================================
 
@@ -1458,6 +1541,85 @@ mod tests {
             "policies:\n  - name: classic\n    type: dynamic\n    query: SELECT 1\n",
         );
         assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
+    }
+
+    // -- PolicyAutomationLocationRule --
+
+    #[test]
+    fn test_install_software_in_default_yml_flagged() {
+        let yaml = "policies:\n  - name: Install Zoom\n    query: SELECT 1\n    install_software:\n      package_path: ./zoom.package.yml\n";
+        let errors = lint_at(
+            &PolicyAutomationLocationRule,
+            yaml,
+            "default.yml",
+        );
+        assert!(
+            errors.iter().any(|e| e.message.contains("install_software")
+                && e.message.contains("fleet-only")),
+            "expected install_software location error, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_run_script_in_default_yml_flagged() {
+        let yaml = "policies:\n  - name: Test\n    query: SELECT 1\n    run_script:\n      path: ./fix.sh\n";
+        let errors = lint_at(&PolicyAutomationLocationRule, yaml, "default.yml");
+        assert!(errors.iter().any(|e| e.message.contains("run_script")));
+    }
+
+    #[test]
+    fn test_calendar_events_enabled_in_default_yml_flagged() {
+        let yaml = "policies:\n  - name: Test\n    query: SELECT 1\n    calendar_events_enabled: true\n";
+        let errors = lint_at(&PolicyAutomationLocationRule, yaml, "default.yml");
+        assert!(errors.iter().any(|e| e.message.contains("calendar_events_enabled")));
+    }
+
+    #[test]
+    fn test_automations_in_fleet_file_not_flagged() {
+        // Same content, but in a fleet file — these automations are allowed.
+        let yaml = "policies:\n  - name: Install Zoom\n    query: SELECT 1\n    install_software:\n      package_path: ./zoom.package.yml\n    run_script:\n      path: ./fix.sh\n    calendar_events_enabled: true\n";
+        let errors = lint_at(
+            &PolicyAutomationLocationRule,
+            yaml,
+            "fleets/workstations.yml",
+        );
+        assert!(
+            errors.is_empty(),
+            "fleet file automations should not be flagged: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_automations_in_unassigned_not_flagged() {
+        let yaml = "policies:\n  - name: Test\n    query: SELECT 1\n    install_software:\n      package_path: ./x.yml\n";
+        let errors = lint_at(
+            &PolicyAutomationLocationRule,
+            yaml,
+            "fleets/unassigned.yml",
+        );
+        assert!(
+            errors.is_empty(),
+            "unassigned.yml automations should not be flagged: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_default_yml_path_references_skipped() {
+        // A path reference in default.yml is fine — the referenced lib file
+        // might be imported by a fleet file too. Only inline policies are flagged.
+        let yaml = "policies:\n  - path: ../lib/pol.policies.yml\n";
+        let errors = lint_at(&PolicyAutomationLocationRule, yaml, "default.yml");
+        assert!(errors.is_empty(), "path refs should not be flagged: {:?}", errors);
+    }
+
+    #[test]
+    fn test_default_yml_without_automations_clean() {
+        let yaml = "policies:\n  - name: FileVault\n    query: SELECT 1\n    platform: darwin\n";
+        let errors = lint_at(&PolicyAutomationLocationRule, yaml, "default.yml");
+        assert!(errors.is_empty(), "clean default.yml should pass: {:?}", errors);
     }
 
     #[test]

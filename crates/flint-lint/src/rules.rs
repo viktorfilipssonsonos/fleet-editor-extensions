@@ -84,6 +84,7 @@ impl RuleSet {
         set.add_rule(Box::new(super::semantic::LabelTargetingRule));
         set.add_rule(Box::new(super::semantic::LabelMembershipRule));
         set.add_rule(Box::new(super::semantic::PatchPolicyRule));
+        set.add_rule(Box::new(super::semantic::PolicyAutomationLocationRule));
         set.add_rule(Box::new(super::semantic::DateFormatRule));
         set.add_rule(Box::new(super::semantic::HashFormatRule));
         set.add_rule(Box::new(super::semantic::CategoriesRule));
@@ -120,6 +121,7 @@ impl RuleSet {
         set.add_rule(Box::new(super::semantic::LabelTargetingRule));
         set.add_rule(Box::new(super::semantic::LabelMembershipRule));
         set.add_rule(Box::new(super::semantic::PatchPolicyRule));
+        set.add_rule(Box::new(super::semantic::PolicyAutomationLocationRule));
         set.add_rule(Box::new(super::semantic::DateFormatRule));
         set.add_rule(Box::new(super::semantic::HashFormatRule));
         set.add_rule(Box::new(super::semantic::CategoriesRule));

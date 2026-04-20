@@ -194,9 +194,74 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "policies.calendar_events_enabled",
         FieldDoc {
             name: "calendar_events_enabled",
-            description: "Whether to create calendar events for policy failures to remind users to fix issues.",
+            description: "Whether to create calendar events for policy failures to remind users to fix issues. **Fleet-only** — per `yaml-files.md:245`, can only be configured on policies in a fleet file (`fleets/<name>.yml` or `fleets/unassigned.yml`), not in `default.yml`.",
             valid_values: Some(&["true", "false"]),
             example: Some("calendar_events_enabled: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.run_script",
+        FieldDoc {
+            name: "run_script",
+            description: "Run a script when the policy fails. **Fleet-only** (per `yaml-files.md:245`) — configure in a fleet file, not `default.yml`. The script must be defined in the same fleet. Requires Fleet Premium.",
+            valid_values: None,
+            example: Some("run_script:\n  path: ./disable-guest-account.sh"),
+            required: false,
+            field_type: "object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.software_title_id",
+        FieldDoc {
+            name: "software_title_id",
+            description: "ID of a software title to install when the policy fails. If the software has label-based targeting, the policy inherits those labels. Requires Fleet Premium.",
+            valid_values: None,
+            example: Some("software_title_id: 42"),
+            required: false,
+            field_type: "integer",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.script_id",
+        FieldDoc {
+            name: "script_id",
+            description: "ID of a script to run when the policy fails. Requires Fleet Premium.",
+            valid_values: None,
+            example: Some("script_id: 7"),
+            required: false,
+            field_type: "integer",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.conditional_access_enabled",
+        FieldDoc {
+            name: "conditional_access_enabled",
+            description: "When `true`, hosts failing this policy are blocked from accessing resources gated by conditional access. Requires Fleet Premium.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("conditional_access_enabled: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.conditional_access_bypass_enabled",
+        FieldDoc {
+            name: "conditional_access_bypass_enabled",
+            description: "When `true`, this policy's failures can be bypassed by conditional-access-enabled hosts. Critical policies never bypass. Requires Fleet Premium.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("conditional_access_bypass_enabled: true"),
             required: false,
             field_type: "boolean",
             cli_hint: None,
@@ -233,7 +298,7 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "policies.install_software",
         FieldDoc {
             name: "install_software",
-            description: "Trigger a software install when the policy fails. Two forms: (1) mapping `{package_path}` or `{hash_sha256}` for a regular policy installing a custom package; (2) boolean `true` on a patch policy to install the Fleet-Maintained App. Requires Fleet Premium.",
+            description: "Trigger a software install when the policy fails. Two forms: (1) mapping `{package_path}` or `{hash_sha256}` for a regular policy installing a custom package; (2) boolean `true` on a patch policy to install the Fleet-Maintained App. **Fleet-only** (per `yaml-files.md:245`) — configure in a fleet file, not `default.yml`. The software must be defined in the same fleet. Requires Fleet Premium.",
             valid_values: None,
             example: Some("install_software:\n  package_path: ./firefox.package.yml"),
             required: false,
