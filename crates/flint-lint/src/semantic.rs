@@ -145,6 +145,15 @@ impl Rule for LabelMembershipRule {
                             .with_help("Dynamic labels use 'query' for membership, not 'hosts'. Use label_membership_type: manual for host lists"),
                         );
                     }
+                    if has_criteria {
+                        errors.push(
+                            LintError::error(
+                                format!("Label '{}' is dynamic but has 'criteria' field", name),
+                                file,
+                            )
+                            .with_help("Dynamic labels use 'query' for membership, not 'criteria'. Use label_membership_type: host_vitals for vital-based criteria"),
+                        );
+                    }
                 }
                 "manual" => {
                     if has_query {
@@ -154,6 +163,15 @@ impl Rule for LabelMembershipRule {
                                 file,
                             )
                             .with_help("Manual labels use 'hosts' for membership, not 'query'. Use label_membership_type: dynamic for SQL queries"),
+                        );
+                    }
+                    if has_criteria {
+                        errors.push(
+                            LintError::error(
+                                format!("Label '{}' is manual but has 'criteria' field", name),
+                                file,
+                            )
+                            .with_help("Manual labels use 'hosts' for membership, not 'criteria'. Use label_membership_type: host_vitals for vital-based criteria"),
                         );
                     }
                 }
@@ -176,12 +194,142 @@ impl Rule for LabelMembershipRule {
                             .with_help("host_vitals labels use 'criteria', not 'query'"),
                         );
                     }
+                    if has_hosts {
+                        errors.push(
+                            LintError::error(
+                                format!("Label '{}' is host_vitals but has 'hosts' field", name),
+                                file,
+                            )
+                            .with_help("host_vitals labels use 'criteria', not 'hosts'. Use label_membership_type: manual for explicit host lists"),
+                        );
+                    }
+                    if has_criteria {
+                        if let serde_yaml::Value::Mapping(map) = item {
+                            if let Some(criteria) =
+                                map.get(serde_yaml::Value::String("criteria".to_string()))
+                            {
+                                validate_criteria(criteria, file, &name, &mut errors);
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }
         }
 
         errors
+    }
+}
+
+/// Recursively validate a host_vital_criteria node.
+///
+/// Each node must be either:
+/// - a **leaf**: `{vital, value, operator?}` with both `vital` and `value` set, or
+/// - a **composite**: `{and: [...]}` or `{or: [...]}` (but not both at once).
+///
+/// A mix of leaf and composite shapes at the same node is rejected.
+fn validate_criteria(
+    node: &serde_yaml::Value,
+    file: &Path,
+    label_name: &str,
+    errors: &mut Vec<LintError>,
+) {
+    let map = match node {
+        serde_yaml::Value::Mapping(m) => m,
+        _ => {
+            errors.push(
+                LintError::error(
+                    format!("Label '{}' criteria must be a mapping", label_name),
+                    file,
+                )
+                .with_help("Use {vital, value} for a leaf or {and: [...]}/{or: [...]} for composites"),
+            );
+            return;
+        }
+    };
+
+    let has = |k: &str| map.contains_key(serde_yaml::Value::String(k.to_string()));
+    let get = |k: &str| map.get(serde_yaml::Value::String(k.to_string()));
+
+    let has_vital = has("vital");
+    let has_value = has("value");
+    let has_operator = has("operator");
+    let has_and = has("and");
+    let has_or = has("or");
+
+    let is_leaf = has_vital || has_value || has_operator;
+    let is_composite = has_and || has_or;
+
+    if !is_leaf && !is_composite {
+        errors.push(
+            LintError::error(
+                format!("Label '{}' has an empty criteria node", label_name),
+                file,
+            )
+            .with_help("Provide {vital, value} or {and: [...]}/{or: [...]}"),
+        );
+        return;
+    }
+
+    if is_leaf && is_composite {
+        errors.push(
+            LintError::error(
+                format!(
+                    "Label '{}' criteria mixes leaf fields (vital/value/operator) with composite (and/or)",
+                    label_name
+                ),
+                file,
+            )
+            .with_help("A criteria node is either a leaf {vital, value} OR a composite {and: [...]}/{or: [...]}"),
+        );
+    }
+
+    if has_and && has_or {
+        errors.push(
+            LintError::error(
+                format!("Label '{}' criteria has both 'and' and 'or' at the same level", label_name),
+                file,
+            )
+            .with_help("Nest one inside the other, e.g. and: [{or: [...]}, ...]"),
+        );
+    }
+
+    if is_leaf {
+        if !has_vital {
+            errors.push(
+                LintError::error(
+                    format!("Label '{}' criteria leaf missing 'vital' field", label_name),
+                    file,
+                )
+                .with_help("Leaf criteria require both 'vital' and 'value'"),
+            );
+        }
+        if !has_value {
+            errors.push(
+                LintError::error(
+                    format!("Label '{}' criteria leaf missing 'value' field", label_name),
+                    file,
+                )
+                .with_help("Leaf criteria require both 'vital' and 'value'"),
+            );
+        }
+    }
+
+    for key in ["and", "or"] {
+        if let Some(serde_yaml::Value::Sequence(items)) = get(key) {
+            if items.is_empty() {
+                errors.push(
+                    LintError::error(
+                        format!("Label '{}' criteria '{}' is empty", label_name, key),
+                        file,
+                    )
+                    .with_help("Provide at least one nested criteria, or remove the empty list"),
+                );
+            }
+            for child in items {
+                validate_criteria(child, file, label_name, errors);
+            }
+        }
     }
 }
 
@@ -907,6 +1055,99 @@ mod tests {
         );
         assert_eq!(errors.len(), 1);
         assert!(errors[0].message.contains("missing 'query'"));
+    }
+
+    #[test]
+    fn test_label_membership_dynamic_with_criteria() {
+        let errors = lint(
+            &LabelMembershipRule,
+            "labels:\n  - name: test\n    label_membership_type: dynamic\n    query: \"SELECT 1\"\n    criteria:\n      vital: os_version\n      value: \"15.0\"\n",
+        );
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message.contains("dynamic but has 'criteria'"));
+    }
+
+    #[test]
+    fn test_label_membership_manual_with_criteria() {
+        let errors = lint(
+            &LabelMembershipRule,
+            "labels:\n  - name: test\n    label_membership_type: manual\n    hosts:\n      - host1\n    criteria:\n      vital: os_version\n      value: \"15.0\"\n",
+        );
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message.contains("manual but has 'criteria'"));
+    }
+
+    #[test]
+    fn test_label_membership_host_vitals_valid() {
+        let errors = lint(
+            &LabelMembershipRule,
+            "labels:\n  - name: test\n    label_membership_type: host_vitals\n    criteria:\n      vital: os_version\n      value: \"15.0\"\n",
+        );
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_label_membership_host_vitals_missing_criteria() {
+        let errors = lint(
+            &LabelMembershipRule,
+            "labels:\n  - name: test\n    label_membership_type: host_vitals\n",
+        );
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message.contains("missing 'criteria'"));
+    }
+
+    #[test]
+    fn test_label_membership_host_vitals_with_hosts() {
+        let errors = lint(
+            &LabelMembershipRule,
+            "labels:\n  - name: test\n    label_membership_type: host_vitals\n    criteria:\n      vital: os_version\n      value: \"15.0\"\n    hosts:\n      - host1\n",
+        );
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message.contains("host_vitals but has 'hosts'"));
+    }
+
+    #[test]
+    fn test_criteria_nested_and_valid() {
+        let yaml = "labels:\n  - name: t\n    label_membership_type: host_vitals\n    criteria:\n      and:\n        - vital: os_name\n          value: macOS\n        - vital: os_arch\n          value: arm64\n";
+        let errors = lint(&LabelMembershipRule, yaml);
+        assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
+    }
+
+    #[test]
+    fn test_criteria_nested_or_valid() {
+        let yaml = "labels:\n  - name: t\n    label_membership_type: host_vitals\n    criteria:\n      or:\n        - vital: os_name\n          value: macOS\n        - vital: os_name\n          value: ubuntu\n";
+        let errors = lint(&LabelMembershipRule, yaml);
+        assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
+    }
+
+    #[test]
+    fn test_criteria_mixed_leaf_and_composite() {
+        let yaml = "labels:\n  - name: t\n    label_membership_type: host_vitals\n    criteria:\n      vital: os_name\n      value: macOS\n      and:\n        - vital: os_arch\n          value: arm64\n";
+        let errors = lint(&LabelMembershipRule, yaml);
+        assert!(errors.iter().any(|e| e.message.contains("mixes leaf fields")));
+    }
+
+    #[test]
+    fn test_criteria_both_and_or_at_same_level() {
+        let yaml = "labels:\n  - name: t\n    label_membership_type: host_vitals\n    criteria:\n      and:\n        - vital: a\n          value: 1\n      or:\n        - vital: b\n          value: 2\n";
+        let errors = lint(&LabelMembershipRule, yaml);
+        assert!(errors
+            .iter()
+            .any(|e| e.message.contains("both 'and' and 'or'")));
+    }
+
+    #[test]
+    fn test_criteria_leaf_missing_value() {
+        let yaml = "labels:\n  - name: t\n    label_membership_type: host_vitals\n    criteria:\n      vital: os_name\n";
+        let errors = lint(&LabelMembershipRule, yaml);
+        assert!(errors.iter().any(|e| e.message.contains("missing 'value'")));
+    }
+
+    #[test]
+    fn test_criteria_empty_and_list() {
+        let yaml = "labels:\n  - name: t\n    label_membership_type: host_vitals\n    criteria:\n      and: []\n";
+        let errors = lint(&LabelMembershipRule, yaml);
+        assert!(errors.iter().any(|e| e.message.contains("'and' is empty")));
     }
 
     // -- DateFormatRule --

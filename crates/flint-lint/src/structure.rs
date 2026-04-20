@@ -346,10 +346,26 @@ fn label_inline_strict() -> SchemaNode {
 }
 
 fn host_vital_criteria() -> SchemaNode {
-    // HostVitalCriteria can be a single {vital, value, operator} or
-    // nested via {and: [...]} / {or: [...]}. Using open_mapping to
-    // support the recursive structure.
-    open_mapping()
+    // HostVitalCriteria is either a leaf {vital, value, operator} or a
+    // composite {and: [...]}/{or: [...]}. The structure is recursive, so
+    // we spell out 3 bounded levels and let depth 4+ fall through to
+    // open_mapping() — deeper nesting is validated permissively instead
+    // of rejected.
+    host_vital_criteria_depth(3)
+}
+
+fn host_vital_criteria_depth(remaining: u8) -> SchemaNode {
+    if remaining == 0 {
+        return open_mapping();
+    }
+    let child = host_vital_criteria_depth(remaining - 1);
+    mapping(vec![
+        ("vital", leaf()),
+        ("value", leaf()),
+        ("operator", leaf()),
+        ("and", array(child.clone())),
+        ("or", array(child)),
+    ])
 }
 
 fn integrations_strict() -> SchemaNode {
@@ -957,6 +973,12 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("host_ids", "labels[]");
     reg.register("criteria", "labels[]");
     reg.register("host_vitals", "labels[]");
+    // host_vital_criteria fields (recursive, registered under labels[].criteria)
+    reg.register("vital", "labels[].criteria");
+    reg.register("value", "labels[].criteria");
+    reg.register("operator", "labels[].criteria");
+    reg.register("and", "labels[].criteria");
+    reg.register("or", "labels[].criteria");
     reg.register("path", "labels[]");
     reg.register("paths", "labels[]");
 

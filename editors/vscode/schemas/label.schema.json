@@ -37,17 +37,38 @@
       }
     },
     "criteria": {
+      "$ref": "#/$defs/criteria",
+      "description": "Criteria for host_vitals labels (required when label_membership_type is 'host_vitals')"
+    }
+  },
+  "$defs": {
+    "criteria": {
       "type": "object",
-      "description": "Criteria for host_vitals labels (required when label_membership_type is 'host_vitals')",
       "properties": {
         "vital": {
           "type": "string",
-          "description": "Vital type"
+          "description": "Host vital identifier (e.g. os_version, os_name, os_arch)"
         },
         "value": {
-          "description": "Vital value"
+          "description": "Expected vital value"
+        },
+        "operator": {
+          "type": "string",
+          "description": "Comparison operator",
+          "enum": ["==", "!=", ">", ">=", "<", "<="]
+        },
+        "and": {
+          "type": "array",
+          "description": "All nested criteria must match",
+          "items": { "$ref": "#/$defs/criteria" }
+        },
+        "or": {
+          "type": "array",
+          "description": "Any nested criteria must match",
+          "items": { "$ref": "#/$defs/criteria" }
         }
-      }
+      },
+      "additionalProperties": false
     }
   },
   "allOf": [

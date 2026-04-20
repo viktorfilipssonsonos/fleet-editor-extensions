@@ -25,6 +25,8 @@ enum CompletionContext {
     QueryField,
     /// Inside a labels array item
     LabelField,
+    /// Inside a labels[].criteria block (or nested and/or inside it)
+    CriteriaField,
     /// Inside software section (choosing packages/app_store_apps/fleet_maintained_apps)
     SoftwareSection,
     /// Inside software.packages array item
@@ -139,6 +141,7 @@ pub fn complete_at_with_context(
         CompletionContext::PolicyField => complete_policy_fields(line, col_idx),
         CompletionContext::QueryField => complete_query_fields(line, col_idx),
         CompletionContext::LabelField => complete_label_fields(line, col_idx),
+        CompletionContext::CriteriaField => complete_criteria_fields(line, col_idx),
         CompletionContext::SoftwareSection => complete_software_section(),
         CompletionContext::SoftwarePackageField => complete_software_package_fields(line, col_idx),
         CompletionContext::AppStoreAppField => complete_app_store_app_fields(line, col_idx),
@@ -440,6 +443,14 @@ fn context_path_to_completion_context(path: Option<&str>) -> CompletionContext {
     match path {
         Some(p) if p == "policies" || p.ends_with(".policies") => CompletionContext::PolicyField,
         Some(p) if p == "queries" || p.ends_with(".queries") => CompletionContext::QueryField,
+        Some(p)
+            if p == "labels.criteria"
+                || p.ends_with(".criteria")
+                || p.contains("criteria.and")
+                || p.contains("criteria.or") =>
+        {
+            CompletionContext::CriteriaField
+        }
         Some(p) if p == "labels" || p.ends_with(".labels") => CompletionContext::LabelField,
         Some("software") => CompletionContext::SoftwareSection,
         Some(p) if p == "software.packages" || p.ends_with(".packages") => {
@@ -674,6 +685,10 @@ fn complete_label_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
                 return vec![
                     create_value_completion("dynamic", "Membership via query"),
                     create_value_completion("manual", "Explicit host assignment"),
+                    create_value_completion(
+                        "host_vitals",
+                        "Membership via host vital criteria",
+                    ),
                 ];
             }
             _ => {}
@@ -688,8 +703,45 @@ fn complete_label_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
         ("description", "What hosts this label identifies", false),
         ("query", "osquery query for dynamic labels", false),
         ("platform", "Target operating system", false),
-        ("label_membership_type", "dynamic or manual", false),
+        (
+            "label_membership_type",
+            "dynamic, manual, or host_vitals",
+            false,
+        ),
         ("hosts", "List of hosts (manual labels)", false),
+        ("criteria", "Host vital criteria (host_vitals labels)", false),
+    ];
+
+    fields
+        .iter()
+        .map(|(name, desc, required)| create_field_completion(name, desc, *required))
+        .collect()
+}
+
+/// Complete host-vital criteria fields (inside labels[].criteria and nested and/or).
+fn complete_criteria_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
+    if let Some(key) = get_key_at_cursor(line, col_idx) {
+        if key.as_str() == "operator" {
+            return [
+                ("==", "Equal to"),
+                ("!=", "Not equal to"),
+                (">", "Greater than"),
+                (">=", "Greater than or equal"),
+                ("<", "Less than"),
+                ("<=", "Less than or equal"),
+            ]
+            .iter()
+            .map(|(v, d)| create_value_completion(v, d))
+            .collect();
+        }
+    }
+
+    let fields = [
+        ("vital", "Host vital identifier (e.g. os_version)", false),
+        ("value", "Expected vital value", false),
+        ("operator", "Comparison operator (==, !=, >=, <=, >, <)", false),
+        ("and", "All nested criteria must match", false),
+        ("or", "Any nested criteria must match", false),
     ];
 
     fields

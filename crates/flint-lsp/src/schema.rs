@@ -399,8 +399,8 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "labels.label_membership_type",
         FieldDoc {
             name: "label_membership_type",
-            description: "How hosts are assigned to this label: 'dynamic' (via query) or 'manual' (explicit assignment).",
-            valid_values: Some(&["dynamic", "manual"]),
+            description: "How hosts are assigned to this label: 'dynamic' (via query), 'manual' (explicit assignment), or 'host_vitals' (criteria on host vitals).",
+            valid_values: Some(&["dynamic", "manual", "host_vitals"]),
             example: Some("label_membership_type: dynamic"),
             required: false,
             field_type: "string",
@@ -417,6 +417,84 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
             example: Some("hosts:\n  - host1.example.com\n  - host2.example.com"),
             required: false,
             field_type: "array of strings",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "labels.criteria",
+        FieldDoc {
+            name: "criteria",
+            description: "Criteria expression for host_vitals labels. Either a leaf `{vital, value}` or a composite `{and: [...]}`/`{or: [...]}`.",
+            valid_values: None,
+            example: Some("criteria:\n  vital: os_version\n  value: \"15.0\"\n  operator: \">=\""),
+            required: false,
+            field_type: "object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "labels.criteria.vital",
+        FieldDoc {
+            name: "vital",
+            description: "Host vital identifier to compare against (e.g. `os_version`, `os_name`, `os_arch`).",
+            valid_values: None,
+            example: Some("vital: os_version"),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "labels.criteria.value",
+        FieldDoc {
+            name: "value",
+            description: "Value to compare the vital against. Type depends on the vital.",
+            valid_values: None,
+            example: Some("value: \"15.0\""),
+            required: false,
+            field_type: "string | number | bool",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "labels.criteria.operator",
+        FieldDoc {
+            name: "operator",
+            description: "Comparison operator. Defaults to equality when omitted.",
+            valid_values: Some(&["==", "!=", ">", ">=", "<", "<="]),
+            example: Some("operator: \">=\""),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "labels.criteria.and",
+        FieldDoc {
+            name: "and",
+            description: "List of nested criteria that must all match.",
+            valid_values: None,
+            example: Some("and:\n  - vital: os_name\n    value: macOS\n  - vital: os_arch\n    value: arm64"),
+            required: false,
+            field_type: "array of criteria",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "labels.criteria.or",
+        FieldDoc {
+            name: "or",
+            description: "List of nested criteria where any match is sufficient.",
+            valid_values: None,
+            example: Some("or:\n  - vital: os_name\n    value: macOS\n  - vital: os_name\n    value: ubuntu"),
+            required: false,
+            field_type: "array of criteria",
             cli_hint: None,
         },
     );
@@ -873,8 +951,8 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "labels.label_membership_type",
         FieldDoc {
             name: "label_membership_type",
-            description: "How hosts are assigned to this label. 'dynamic' uses the query, 'manual' requires explicit assignment.",
-            valid_values: Some(&["dynamic", "manual"]),
+            description: "How hosts are assigned to this label. 'dynamic' uses the query, 'manual' requires explicit assignment, 'host_vitals' uses a criteria expression.",
+            valid_values: Some(&["dynamic", "manual", "host_vitals"]),
             example: Some("label_membership_type: dynamic"),
             required: false,
             field_type: "string",
