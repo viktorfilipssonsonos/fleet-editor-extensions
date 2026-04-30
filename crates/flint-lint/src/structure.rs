@@ -177,6 +177,7 @@ fn macos_setup() -> SchemaNode {
         // New names (renameto tags from Go code)
         ("macos_bootstrap_package", leaf()),
         ("macos_manual_agent_install", boolean_leaf()),
+        ("require_all_software_macos", boolean_leaf()),
         ("apple_enable_release_device_manually", boolean_leaf()),
         ("apple_setup_assistant", leaf()),
         ("macos_script", leaf()),
@@ -759,6 +760,7 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
         // New names (renameto tags)
         reg.register("macos_bootstrap_package", parent);
         reg.register("macos_manual_agent_install", parent);
+        reg.register("require_all_software_macos", parent);
         reg.register("apple_enable_release_device_manually", parent);
         reg.register("apple_setup_assistant", parent);
         reg.register("macos_script", parent);
