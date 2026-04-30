@@ -580,6 +580,7 @@ fn team_settings_strict() -> SchemaNode {
 
 fn agent_options_inline() -> SchemaNode {
     mapping(vec![
+        ("path", leaf()),
         ("config", open_mapping()),
         ("overrides", open_mapping()),
         ("command_line_flags", open_mapping()),
@@ -903,6 +904,9 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("labels_exclude_any", "reports[]");
     reg.register("path", "reports[]");
     reg.register("paths", "reports[]");
+
+    // agent_options path reference
+    reg.register("path", "agent_options");
 
     // integrations children (under org_settings.integrations or team_settings.integrations)
     reg.register("conditional_access_enabled", "org_settings.integrations");
