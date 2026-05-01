@@ -977,6 +977,97 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
     );
 
     m.insert(
+        "controls.apple_require_hardware_attestation",
+        FieldDoc {
+            name: "apple_require_hardware_attestation",
+            description: "Require Apple hardware attestation for Apple devices. When enabled, Fleet verifies that devices are genuine Apple hardware before allowing MDM enrollment.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("apple_require_hardware_attestation: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.enable_recovery_lock_password",
+        FieldDoc {
+            name: "enable_recovery_lock_password",
+            description: "Enable Fleet to manage the macOS Recovery Lock password via MDM. When enabled, Fleet sets a random recovery lock password on managed Macs.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("enable_recovery_lock_password: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.windows_require_bitlocker_pin",
+        FieldDoc {
+            name: "windows_require_bitlocker_pin",
+            description: "Require a PIN for BitLocker disk encryption on Windows devices managed via MDM.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("windows_require_bitlocker_pin: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.windows_enabled_and_configured",
+        FieldDoc {
+            name: "windows_enabled_and_configured",
+            description: "Enable and configure Windows MDM. Must be set to true to manage Windows devices via Fleet MDM.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("windows_enabled_and_configured: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.windows_entra_tenant_ids",
+        FieldDoc {
+            name: "windows_entra_tenant_ids",
+            description: "List of Microsoft Entra (Azure AD) tenant IDs to allow for Windows MDM enrollment.",
+            valid_values: None,
+            example: Some("windows_entra_tenant_ids:\n  - \"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\""),
+            required: false,
+            field_type: "array of strings",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.enable_turn_on_windows_mdm_manually",
+        FieldDoc {
+            name: "enable_turn_on_windows_mdm_manually",
+            description: "Allow end users to manually trigger Windows MDM enrollment from Fleet Desktop.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("enable_turn_on_windows_mdm_manually: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.windows_migration_enabled",
+        FieldDoc {
+            name: "windows_migration_enabled",
+            description: "Enable migration of Windows hosts from a third-party MDM to Fleet MDM.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("windows_migration_enabled: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
         "controls.macos_settings",
         FieldDoc {
             name: "macos_settings",

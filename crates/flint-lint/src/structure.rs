@@ -271,6 +271,7 @@ fn controls_schema() -> SchemaNode {
         ("windows_migration_enabled", boolean_leaf()),
         ("enable_disk_encryption", boolean_leaf()),
         ("enable_recovery_lock_password", boolean_leaf()),
+        ("apple_require_hardware_attestation", boolean_leaf()),
         ("volume_purchasing_program", open_mapping()),
         ("windows_require_bitlocker_pin", boolean_leaf()),
         ("macos_updates", macos_updates()),
@@ -313,6 +314,7 @@ fn policy_inline_strict() -> SchemaNode {
                 ("package_path", leaf()),
                 ("hash_sha256", leaf()),
                 ("fleet_maintained_app_slug", leaf()),
+                ("app_store_id", leaf()),
             ]),
         ),
     ])
@@ -704,6 +706,9 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("enable_turn_on_windows_mdm_manually", "controls");
     reg.register("windows_migration_enabled", "controls");
     reg.register("enable_disk_encryption", "controls");
+    reg.register("enable_recovery_lock_password", "controls");
+    reg.register("apple_require_hardware_attestation", "controls");
+    reg.register("volume_purchasing_program", "controls");
     reg.register("windows_require_bitlocker_pin", "controls");
     reg.register("macos_updates", "controls");
     reg.register("ios_updates", "controls");
