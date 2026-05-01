@@ -129,11 +129,76 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "policies.query",
         FieldDoc {
             name: "query",
-            description: "The osquery SQL query that determines policy compliance. Returns results when the policy is violated (failing).",
+            description: "The osquery SQL query that determines policy compliance. Required for standard policies; automatically generated (not needed) when type: patch.",
             valid_values: None,
             example: Some("query: SELECT 1 FROM disk_encryption WHERE encrypted = 0"),
-            required: true,
+            required: false,
             field_type: "string (osquery SQL)",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.type",
+        FieldDoc {
+            name: "type",
+            description: "Set to 'patch' to create a Fleet Maintained App patch policy. The SQL query is auto-generated — no query field needed.",
+            valid_values: Some(&["patch"]),
+            example: Some("type: patch"),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.fleet_maintained_app_slug",
+        FieldDoc {
+            name: "fleet_maintained_app_slug",
+            description: "The Fleet Maintained App slug to target with a patch policy (e.g. zoom/darwin, firefox/windows).",
+            valid_values: None,
+            example: Some("fleet_maintained_app_slug: zoom/darwin"),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.version",
+        FieldDoc {
+            name: "version",
+            description: "Pin a specific app version for a patch policy.",
+            valid_values: None,
+            example: Some("version: \"5.17.0\""),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.install_software",
+        FieldDoc {
+            name: "install_software",
+            description: "Automatically install software when this policy fails (Premium feature, team-level only). For patch policies, set to `true` to auto-install the Fleet Maintained App. For standard policies, provide an object with one of: `package_path`, `fleet_maintained_app_slug`, or `hash_sha256`.",
+            valid_values: Some(&["true", "package_path: <path>", "fleet_maintained_app_slug: <slug>", "hash_sha256: <hash>"]),
+            example: Some("install_software: true\n# or:\ninstall_software:\n  fleet_maintained_app_slug: zoom/darwin\n# or:\ninstall_software:\n  package_path: ../lib/firefox.package.yml"),
+            required: false,
+            field_type: "boolean or object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.run_script",
+        FieldDoc {
+            name: "run_script",
+            description: "Run a script when this policy fails (Premium feature, team-level only).",
+            valid_values: None,
+            example: Some("run_script:\n  path: ../lib/fix-compliance.sh"),
+            required: false,
+            field_type: "object",
             cli_hint: None,
         },
     );
@@ -1687,10 +1752,11 @@ pub fn get_field_doc(path: &str) -> Option<&'static FieldDoc> {
         }
     }
 
-    // Try just the field name (last segment)
+    // Try just the field name (last segment), requiring an exact segment boundary
     let field_name = path.split('.').next_back().unwrap_or(path);
+    let segment_suffix = format!(".{}", field_name);
     for (key, doc) in FIELD_DOCS.iter() {
-        if key.ends_with(field_name) {
+        if key.ends_with(segment_suffix.as_str()) || *key == field_name {
             return Some(doc);
         }
     }

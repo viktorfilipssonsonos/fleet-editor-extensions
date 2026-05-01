@@ -300,13 +300,20 @@ fn policy_inline_strict() -> SchemaNode {
         ("conditional_access_bypass_enabled", boolean_leaf()),
         ("software_title_id", leaf()),
         ("script_id", leaf()),
+        ("type", leaf()),
+        ("fleet_maintained_app_slug", leaf()),
+        ("version", leaf()),
         ("labels_include_any", array(leaf())),
         ("labels_include_all", array(leaf())),
         ("labels_exclude_any", array(leaf())),
         ("run_script", mapping(vec![("path", leaf())])),
         (
             "install_software",
-            mapping(vec![("package_path", leaf()), ("hash_sha256", leaf())]),
+            mapping(vec![
+                ("package_path", leaf()),
+                ("hash_sha256", leaf()),
+                ("fleet_maintained_app_slug", leaf()),
+            ]),
         ),
     ])
 }
@@ -933,6 +940,9 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("labels_exclude_any", "policies[]");
     reg.register("run_script", "policies[]");
     reg.register("install_software", "policies[]");
+    reg.register("type", "policies[]");
+    reg.register("fleet_maintained_app_slug", "policies[]");
+    reg.register("version", "policies[]");
     reg.register("path", "policies[]");
     reg.register("paths", "policies[]");
 
