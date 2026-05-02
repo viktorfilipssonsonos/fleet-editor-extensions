@@ -1811,6 +1811,19 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         },
     );
 
+    m.insert(
+        "agent_options.path",
+        FieldDoc {
+            name: "path",
+            description: "Path to an external YAML file containing agent options configuration. Relative to the repository root.",
+            valid_values: None,
+            example: Some("agent_options:\n  path: ../lib/agent-options.yml"),
+            required: false,
+            field_type: "string (file path)",
+            cli_hint: None,
+        },
+    );
+
     // Generic fallbacks
     m.insert(
         "paths",
@@ -1843,9 +1856,20 @@ pub fn get_field_doc(path: &str) -> Option<&'static FieldDoc> {
         }
     }
 
-    // Try just the field name (last segment), requiring an exact segment boundary
+    // Try just the field name (last segment), requiring an exact segment boundary.
+    // Prefer entries that share the same top-level context as the requested path.
     let field_name = path.split('.').next_back().unwrap_or(path);
     let segment_suffix = format!(".{}", field_name);
+    let context_prefix = path.split('.').next().unwrap_or("");
+    let context_prefix_dot = format!("{}.", context_prefix);
+    for (key, doc) in FIELD_DOCS.iter() {
+        if (key.ends_with(segment_suffix.as_str()) || *key == field_name)
+            && key.starts_with(context_prefix_dot.as_str())
+        {
+            return Some(doc);
+        }
+    }
+    // No context-matching entry found — fall back to any segment match
     for (key, doc) in FIELD_DOCS.iter() {
         if key.ends_with(segment_suffix.as_str()) || *key == field_name {
             return Some(doc);
