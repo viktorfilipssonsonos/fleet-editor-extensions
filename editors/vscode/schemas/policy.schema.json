@@ -4,7 +4,29 @@
   "title": "Fleet Policy",
   "description": "Schema for Fleet policy configuration",
   "type": "object",
-  "required": ["name", "description", "query"],
+  "required": ["name"],
+  "allOf": [
+    {
+      "if": {
+        "not": {
+          "properties": { "type": { "const": "patch" } },
+          "required": ["type"]
+        }
+      },
+      "then": {
+        "required": ["query"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "patch" } },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["fleet_maintained_app_slug"]
+      }
+    }
+  ],
   "properties": {
     "name": {
       "type": "string",
@@ -19,7 +41,6 @@
     "description": {
       "type": "string",
       "description": "Policy description - explains what the policy checks and why it matters",
-      "minLength": 1,
       "examples": [
         "Checks if the system firewall is enabled to protect against unauthorized network access",
         "Verifies full disk encryption is active on the device"
@@ -27,13 +48,28 @@
     },
     "query": {
       "type": "string",
-      "description": "SQL query that determines policy compliance. Query should return rows when compliant (passing), no rows when non-compliant (failing)",
+      "description": "osquery SQL that determines policy compliance. Required for standard policies; auto-generated when type: patch.",
       "minLength": 1,
       "examples": [
         "SELECT 1 FROM disk_encryption WHERE encrypted=1;",
         "SELECT 1 FROM system_info WHERE hostname LIKE '%-MBP-%';",
         "SELECT 1 FROM windows_security_center WHERE firewall='Good';"
       ]
+    },
+    "type": {
+      "type": "string",
+      "description": "Policy type. 'dynamic' (default) is a classic editable-query policy. 'patch' creates a Fleet-Maintained App patch policy whose query is auto-generated; requires fleet_maintained_app_slug.",
+      "enum": ["dynamic", "patch"]
+    },
+    "fleet_maintained_app_slug": {
+      "type": "string",
+      "description": "Fleet Maintained App slug for patch policies, typically in name/platform form",
+      "examples": ["zoom/darwin", "firefox/windows", "slack/darwin"]
+    },
+    "version": {
+      "type": "string",
+      "description": "Pin a specific Fleet-Maintained App version for a patch policy",
+      "examples": ["5.17.0", "120.0"]
     },
     "platform": {
       "type": "string",
@@ -49,7 +85,7 @@
     },
     "calendar_events_enabled": {
       "type": "boolean",
-      "description": "Enable calendar events for this policy",
+      "description": "Enable calendar events for this policy (fleet-only per yaml-files.md:245)",
       "default": false
     },
     "conditional_access_enabled": {
@@ -57,38 +93,77 @@
       "description": "Enable conditional access for this policy",
       "default": false
     },
+    "conditional_access_bypass_enabled": {
+      "type": "boolean",
+      "description": "Allow conditional-access bypass for this policy (Fleet Premium). Critical policies never bypass.",
+      "default": false
+    },
+    "webhooks_and_tickets_enabled": {
+      "type": "boolean",
+      "description": "When true, this policy is added to failing_policies_webhook.policy_ids on apply (GitOps convenience). Cannot be combined with explicit policy_ids.",
+      "default": false
+    },
+    "software_title_id": {
+      "type": "integer",
+      "description": "ID of a software title to install when this policy fails (Fleet Premium)"
+    },
+    "script_id": {
+      "type": "integer",
+      "description": "ID of a script to run when this policy fails (Fleet Premium)"
+    },
+    "team": {
+      "type": "string",
+      "description": "Fleet (team) this policy belongs to. Renamed to 'fleet' in newer Fleet versions."
+    },
+    "fleet": {
+      "type": "string",
+      "description": "Fleet (team) this policy belongs to (rename target of 'team')."
+    },
     "labels_include_any": {
       "type": "array",
-      "description": "Policy applies to hosts with any of these labels",
+      "description": "Policy applies only to hosts with any of these labels (Fleet Premium)",
       "items": {
-        "type": "string",
-        "examples": ["macOS", "Windows", "All Hosts", "Servers", "Workstations"]
+        "type": "string"
       },
       "examples": [
         ["macOS"],
         ["Windows", "Linux"]
       ]
     },
+    "labels_exclude_any": {
+      "type": "array",
+      "description": "Policy excludes hosts with any of these labels (Fleet Premium)",
+      "items": {
+        "type": "string"
+      }
+    },
     "install_software": {
-      "type": "object",
-      "description": "Software to install when policy fails (Premium feature, team-level only)",
+      "description": "Install software when this policy fails (Fleet Premium, fleet-only per yaml-files.md:245). Use boolean true for patch policies, or an object with one of: package_path, hash_sha256, app_store_id, or fleet_maintained_app_slug.",
       "oneOf": [
         {
-          "required": ["package_path"],
+          "type": "boolean",
+          "description": "Set to true on a patch policy to install the Fleet-Maintained App on policy failure"
+        },
+        {
+          "type": "object",
+          "description": "Install a specific package on policy failure",
           "properties": {
             "package_path": {
               "type": "string",
-              "description": "Path to software package"
-            }
-          }
-        },
-        {
-          "required": ["hash_sha256"],
-          "properties": {
+              "description": "Path to a custom package YAML file"
+            },
             "hash_sha256": {
               "type": "string",
-              "description": "SHA256 hash of software package",
+              "description": "SHA256 hash of a custom package",
               "pattern": "^[a-fA-F0-9]{64}$"
+            },
+            "app_store_id": {
+              "type": "string",
+              "description": "VPP App Store ID for an iOS/macOS App Store app"
+            },
+            "fleet_maintained_app_slug": {
+              "type": "string",
+              "description": "Fleet-Maintained App slug (name/platform form, e.g. zoom/darwin)"
             }
           }
         }
@@ -96,7 +171,7 @@
     },
     "run_script": {
       "type": "object",
-      "description": "Script to run when policy fails (Premium feature, team-level only)",
+      "description": "Script to run when policy fails (Fleet Premium, fleet-only per yaml-files.md:245)",
       "required": ["path"],
       "properties": {
         "path": {

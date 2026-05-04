@@ -205,7 +205,7 @@ impl Rule for RequiredFieldsRule {
                                     ),
                                     file,
                                 )
-                                .with_help("Policies must have a query field with osquery SQL")
+                                .with_help("Policies must have a query field with osquery SQL (or set type: patch for Fleet Maintained App patch policies)")
                                 .with_suggestion("query: \"SELECT 1 FROM ...;\""),
                             );
                         }

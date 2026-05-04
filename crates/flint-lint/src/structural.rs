@@ -818,6 +818,50 @@ settings:
     }
 
     #[test]
+    fn test_policy_webhooks_and_tickets_enabled_accepted() {
+        // Per Fleet CHANGELOG: "Implemented `webhooks_and_tickets_enabled`
+        // flag for policies in GitOps." Cross-validated against
+        // testdata/generateGitops/expectedTeamPolicies.yaml:13.
+        let yaml = r#"
+- name: macOS - All available software updates installed
+  query: SELECT 1
+  platform: darwin
+  webhooks_and_tickets_enabled: true
+"#;
+        let errors = check(yaml, "platforms/macos/policies/all-software-updates-installed.yml");
+        assert!(
+            errors.is_empty(),
+            "webhooks_and_tickets_enabled is a valid policy field: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_policy_install_software_app_store_id_accepted() {
+        // Per gitops.go:231-236, install_software supports app_store_id.
+        // Cross-validated against expectedTeamPolicies.yaml:30-31.
+        let yaml = r#"
+- name: VPP install
+  query: SELECT 1
+  install_software:
+    app_store_id: "1234567890"
+"#;
+        let errors = check(yaml, "policies/test.yml");
+        assert!(
+            errors.is_empty(),
+            "install_software.app_store_id is valid: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_policy_team_field_accepted() {
+        let yaml = "policies:\n  - name: Test\n    query: SELECT 1\n    team: Engineering\n";
+        let errors = check(yaml, "default.yml");
+        assert!(errors.is_empty(), "team is a valid policy field: {:?}", errors);
+    }
+
+    #[test]
     fn test_org_vulnerabilities_webhook_accepted() {
         let yaml = r#"
 org_settings:

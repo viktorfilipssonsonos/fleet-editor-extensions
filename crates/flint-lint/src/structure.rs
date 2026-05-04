@@ -177,9 +177,20 @@ fn macos_setup() -> SchemaNode {
         // New names (renameto tags from Go code)
         ("macos_bootstrap_package", leaf()),
         ("macos_manual_agent_install", boolean_leaf()),
+        // `require_all_software` rename — per
+        // fleet/server/fleet/apple_mdm.go:529 (MDMAppleSetupPayload),
+        // the JSON tag is `require_all_software_macos`. Keep the old
+        // short name (line above) for backwards compat.
+        ("require_all_software_macos", boolean_leaf()),
+        ("require_all_software_windows", boolean_leaf()),
         ("apple_enable_release_device_manually", boolean_leaf()),
         ("apple_setup_assistant", leaf()),
         ("macos_script", leaf()),
+        // Additional setup_experience fields per MDMAppleSetupPayload
+        // (apple_mdm.go:524-534). `enable_end_user_authentication` is
+        // already listed above in the old-names block.
+        ("enable_managed_local_account", boolean_leaf()),
+        ("end_user_local_account_type", leaf()),
     ])
 }
 
@@ -270,6 +281,10 @@ fn controls_schema() -> SchemaNode {
         ("windows_migration_enabled", boolean_leaf()),
         ("enable_disk_encryption", boolean_leaf()),
         ("enable_recovery_lock_password", boolean_leaf()),
+        // Per fleet/server/fleet/app.go:243 (AppleRequireHardwareAttestation)
+        // and pkg/spec/gitops.go:187. Verifies devices are genuine Apple
+        // hardware before MDM enrollment is allowed.
+        ("apple_require_hardware_attestation", boolean_leaf()),
         ("volume_purchasing_program", open_mapping()),
         ("windows_require_bitlocker_pin", boolean_leaf()),
         ("macos_updates", macos_updates()),
@@ -287,6 +302,9 @@ fn controls_schema() -> SchemaNode {
 }
 
 fn policy_inline_strict() -> SchemaNode {
+    // Source of truth: `pkg/spec/gitops.go` (GitOpsPolicySpec) +
+    // `server/fleet/policies.go` (PolicySpec). Cross-validated against
+    // `cmd/fleetctl/fleetctl/testdata/generateGitops/expectedTeamPolicies.yaml`.
     mapping(vec![
         ("name", leaf()),
         ("description", leaf()),
@@ -294,27 +312,41 @@ fn policy_inline_strict() -> SchemaNode {
         ("query", leaf()),
         ("platform", leaf()),
         ("critical", boolean_leaf()),
+        // `team` is renameto:"fleet" in Fleet Go — both names valid for compat.
+        ("team", leaf()),
+        ("fleet", leaf()),
         ("calendar_events_enabled", boolean_leaf()),
         ("conditional_access_enabled", boolean_leaf()),
         ("conditional_access_bypass_enabled", boolean_leaf()),
+        // GitOps-only convenience: maps the policy ID into
+        // failing_policies_webhook.policy_ids on apply (gitops.go:221-224).
+        ("webhooks_and_tickets_enabled", boolean_leaf()),
         ("software_title_id", leaf()),
         ("script_id", leaf()),
         ("labels_include_any", array(leaf())),
-        ("labels_include_all", array(leaf())),
         ("labels_exclude_any", array(leaf())),
         ("run_script", mapping(vec![("path", leaf())])),
         // Patch policy fields (yaml-files.md:141-149). `type: patch` marks a
         // patch policy; `fleet_maintained_app_slug` selects which FMA to track.
+        // `version` pins to a specific FMA version (yaml-files.md:147 — "If
+        // `version` is set for `fleet_maintained_apps`, that version is
+        // included in the query.").
         ("type", leaf()),
         ("fleet_maintained_app_slug", leaf()),
+        ("version", leaf()),
         // install_software can be either:
-        //   - a mapping {package_path | hash_sha256} for regular install-on-fail, or
+        //   - a mapping (PolicyInstallSoftware fields per gitops.go:231-236), or
         //   - boolean `true` for patch policies to install the FMA on fail.
         // The structural validator's Mapping arm is a no-op on non-mapping
         // values, so a boolean `true` passes through this schema silently.
         (
             "install_software",
-            mapping(vec![("package_path", leaf()), ("hash_sha256", leaf())]),
+            mapping(vec![
+                ("package_path", leaf()),
+                ("hash_sha256", leaf()),
+                ("app_store_id", leaf()),
+                ("fleet_maintained_app_slug", leaf()),
+            ]),
         ),
     ])
 }
@@ -370,11 +402,13 @@ fn host_vital_criteria() -> SchemaNode {
 }
 
 fn integrations_strict() -> SchemaNode {
+    // `webhooks_and_tickets_enabled` was previously listed here by mistake —
+    // it's a per-policy field (see `policy_inline_strict`), not an
+    // integrations-level setting.
     mapping(vec![
         ("conditional_access_enabled", boolean_leaf()),
         ("enable_conditional_access", boolean_leaf()),
         ("enable_conditional_access_bypass", boolean_leaf()),
-        ("webhooks_and_tickets_enabled", boolean_leaf()),
         (
             "google_calendar",
             array(mapping(vec![
@@ -616,6 +650,10 @@ fn team_settings_strict() -> SchemaNode {
 
 fn agent_options_inline() -> SchemaNode {
     mapping(vec![
+        // Per yaml-files.md (agent_options section): the `agent_options`
+        // mapping can be either an inline object or a `path:` reference
+        // pointing at a separate lib YAML file.
+        ("path", leaf()),
         ("config", open_mapping()),
         ("overrides", open_mapping()),
         ("command_line_flags", open_mapping()),
@@ -717,6 +755,8 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("queries", "");
     reg.register("reports", "");
     reg.register("agent_options", "");
+    // agent_options can be inline OR a path reference (yaml-files.md agent_options).
+    reg.register("path", "agent_options");
     reg.register("controls", "");
     reg.register("software", "");
     reg.register("org_settings", "");
@@ -731,6 +771,9 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("enable_turn_on_windows_mdm_manually", "controls");
     reg.register("windows_migration_enabled", "controls");
     reg.register("enable_disk_encryption", "controls");
+    reg.register("enable_recovery_lock_password", "controls");
+    reg.register("apple_require_hardware_attestation", "controls");
+    reg.register("volume_purchasing_program", "controls");
     reg.register("windows_require_bitlocker_pin", "controls");
     reg.register("macos_updates", "controls");
     reg.register("ios_updates", "controls");
@@ -794,9 +837,14 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
         // New names (renameto tags)
         reg.register("macos_bootstrap_package", parent);
         reg.register("macos_manual_agent_install", parent);
+        reg.register("require_all_software_macos", parent);
+        reg.register("require_all_software_windows", parent);
         reg.register("apple_enable_release_device_manually", parent);
         reg.register("apple_setup_assistant", parent);
         reg.register("macos_script", parent);
+        // Additional MDMAppleSetupPayload fields (apple_mdm.go:524-534).
+        reg.register("enable_managed_local_account", parent);
+        reg.register("end_user_local_account_type", parent);
     }
 
     // controls.macos_migration children
@@ -999,28 +1047,38 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("jira", "org_settings.integrations");
     reg.register("zendesk", "org_settings.integrations");
 
-    // Policy fields
+    // Policy fields. Authoritative source: pkg/spec/gitops.go:206-225 +
+    // server/fleet/policies.go:448-485. Cross-validated against
+    // testdata/generateGitops/expectedTeamPolicies.yaml.
     reg.register("name", "policies[]");
     reg.register("description", "policies[]");
     reg.register("resolution", "policies[]");
     reg.register("query", "policies[]");
     reg.register("platform", "policies[]");
     reg.register("critical", "policies[]");
+    reg.register("team", "policies[]");
+    reg.register("fleet", "policies[]"); // renameto target of `team`
     reg.register("calendar_events_enabled", "policies[]");
     reg.register("conditional_access_enabled", "policies[]");
     reg.register("conditional_access_bypass_enabled", "policies[]");
+    reg.register("webhooks_and_tickets_enabled", "policies[]");
     reg.register("software_title_id", "policies[]");
     reg.register("script_id", "policies[]");
     reg.register("labels_include_any", "policies[]");
-    reg.register("labels_include_all", "policies[]");
     reg.register("labels_exclude_any", "policies[]");
     reg.register("run_script", "policies[]");
     reg.register("install_software", "policies[]");
     // Patch policy fields (Fleet Premium).
     reg.register("type", "policies[]");
     reg.register("fleet_maintained_app_slug", "policies[]");
+    reg.register("version", "policies[]");
     reg.register("path", "policies[]");
     reg.register("paths", "policies[]");
+    // install_software leaf fields (PolicyInstallSoftware in gitops.go:231-236)
+    reg.register("package_path", "policies[].install_software");
+    reg.register("hash_sha256", "policies[].install_software");
+    reg.register("app_store_id", "policies[].install_software");
+    reg.register("fleet_maintained_app_slug", "policies[].install_software");
 
     // Query fields
     reg.register("name", "queries[]");

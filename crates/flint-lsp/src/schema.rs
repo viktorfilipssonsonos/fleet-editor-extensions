@@ -269,6 +269,32 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
     );
 
     m.insert(
+        "policies.webhooks_and_tickets_enabled",
+        FieldDoc {
+            name: "webhooks_and_tickets_enabled",
+            description: "When `true`, this policy is added to the failing-policies webhook (and any ticket integrations). GitOps-only convenience: at apply time Fleet adds this policy's ID to `failing_policies_webhook.policy_ids`. Cannot be combined with explicit `policy_ids` in webhook_settings.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("webhooks_and_tickets_enabled: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.team",
+        FieldDoc {
+            name: "team",
+            description: "The fleet (team) this policy belongs to. Renamed to `fleet` in newer Fleet versions — both keys are accepted for compatibility.",
+            valid_values: None,
+            example: Some("team: Engineering"),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
         "policies.type",
         FieldDoc {
             name: "type",
@@ -1850,6 +1876,151 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         },
     );
 
+    // ---- Patch policy version + agent_options.path + Windows/Apple MDM controls ----
+
+    m.insert(
+        "policies.version",
+        FieldDoc {
+            name: "version",
+            description: "Pin a specific Fleet-Maintained App version for a patch policy. Per yaml-files.md:147, when set, the version is included in the auto-generated query. Combined with `type: patch` and `fleet_maintained_app_slug`.",
+            valid_values: None,
+            example: Some("version: \"5.17.0\""),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "agent_options.path",
+        FieldDoc {
+            name: "path",
+            description: "Path to an external YAML file containing agent options. Relative to the file using it. Use this to keep `agent_options` in a separate `lib/agent-options.yml` file.",
+            valid_values: None,
+            example: Some("agent_options:\n  path: ../lib/agent-options.yml"),
+            required: false,
+            field_type: "string (file path)",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.apple_require_hardware_attestation",
+        FieldDoc {
+            name: "apple_require_hardware_attestation",
+            description: "When true, Fleet verifies that devices are genuine Apple hardware (via the Secure Enclave) before allowing MDM enrollment. Source: fleet/server/fleet/app.go (AppleRequireHardwareAttestation).",
+            valid_values: Some(&["true", "false"]),
+            example: Some("apple_require_hardware_attestation: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.enable_recovery_lock_password",
+        FieldDoc {
+            name: "enable_recovery_lock_password",
+            description: "When true, Fleet sets and rotates a random Recovery Lock password on eligible macOS hosts (yaml-files.md:369). Available in Fleet Premium.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("enable_recovery_lock_password: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.windows_require_bitlocker_pin",
+        FieldDoc {
+            name: "windows_require_bitlocker_pin",
+            description: "Require end users on Windows hosts to set a BitLocker PIN at startup. `enable_disk_encryption` must be true. Default: false (yaml-files.md:368).",
+            valid_values: Some(&["true", "false"]),
+            example: Some("windows_require_bitlocker_pin: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.windows_enabled_and_configured",
+        FieldDoc {
+            name: "windows_enabled_and_configured",
+            description: "Master switch for Windows MDM. Must be true to manage Windows hosts via Fleet MDM.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("windows_enabled_and_configured: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.windows_entra_tenant_ids",
+        FieldDoc {
+            name: "windows_entra_tenant_ids",
+            description: "Microsoft Entra (Azure AD) tenant IDs allowed for Windows MDM enrollment.",
+            valid_values: None,
+            example: Some("windows_entra_tenant_ids:\n  - 4e342a0d-ec1a-4353-bdeb-785542e0a8fb"),
+            required: false,
+            field_type: "array of strings",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.enable_turn_on_windows_mdm_manually",
+        FieldDoc {
+            name: "enable_turn_on_windows_mdm_manually",
+            description: "When true, end users must manually enable MDM in Windows Settings > Access work or school. When false, Fleet auto-enables MDM for unmanaged Windows hosts. Org-only (yaml-files.md:365).",
+            valid_values: Some(&["true", "false"]),
+            example: Some("enable_turn_on_windows_mdm_manually: false"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.windows_migration_enabled",
+        FieldDoc {
+            name: "windows_migration_enabled",
+            description: "When true, automatically migrate Windows hosts connected to a third-party MDM. Requires `enable_turn_on_windows_mdm_manually: false`. Org-only (yaml-files.md:366).",
+            valid_values: Some(&["true", "false"]),
+            example: Some("windows_migration_enabled: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "macos_setup.require_all_software_macos",
+        FieldDoc {
+            name: "require_all_software_macos",
+            description: "When true, cancel macOS setup experience if any software install fails. New canonical name (`require_all_software` is the legacy form). Source: fleet/server/fleet/apple_mdm.go:529.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("require_all_software_macos: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "macos_setup.require_all_software_windows",
+        FieldDoc {
+            name: "require_all_software_windows",
+            description: "Windows counterpart to `require_all_software_macos` — cancel setup if any software install fails on Windows. Source: fleet/server/fleet/apple_mdm.go:530.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("require_all_software_windows: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
     // Generic fallbacks
     m.insert(
         "paths",
@@ -1882,10 +2053,23 @@ pub fn get_field_doc(path: &str) -> Option<&'static FieldDoc> {
         }
     }
 
-    // Try just the field name (last segment)
+    // Try just the field name (last segment), requiring exact segment
+    // boundaries so `webhook` doesn't match `failing_policies_webhook`.
+    // Prefer entries that share the same top-level context as the request.
     let field_name = path.split('.').next_back().unwrap_or(path);
+    let segment_suffix = format!(".{}", field_name);
+    let context_prefix = path.split('.').next().unwrap_or("");
+    let context_prefix_dot = format!("{}.", context_prefix);
     for (key, doc) in FIELD_DOCS.iter() {
-        if key.ends_with(field_name) {
+        if (key.ends_with(segment_suffix.as_str()) || *key == field_name)
+            && key.starts_with(context_prefix_dot.as_str())
+        {
+            return Some(doc);
+        }
+    }
+    // No context-matching entry — fall back to any segment match.
+    for (key, doc) in FIELD_DOCS.iter() {
+        if key.ends_with(segment_suffix.as_str()) || *key == field_name {
             return Some(doc);
         }
     }

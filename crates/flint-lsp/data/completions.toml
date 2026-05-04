@@ -251,6 +251,11 @@ context = "setup_experience"
 name = "require_all_software"
 description = "Cancel setup if any software install fails (macOS only)"
 
+[[fields]]
+context = "setup_experience"
+name = "require_all_software_macos"
+description = "Cancel setup if any software install fails (macOS only)"
+
 # --- configuration_profiles ---
 
 [[fields]]

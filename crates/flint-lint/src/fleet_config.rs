@@ -5,6 +5,7 @@
 //! typed access to the configuration beyond raw YAML.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 
 /// Fleet GitOps configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -51,6 +52,9 @@ pub struct FleetConfig {
 /// NOTE: Path variants must come first in untagged enum for correct deserialization
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
+// Policy has many optional fields (~280 bytes); the size disparity between
+// variants here is expected. Boxing would force every callsite to deref.
+#[allow(clippy::large_enum_variant)]
 pub enum PolicyOrPath {
     Path { path: String },
     Paths { paths: String }, // glob pattern (e.g., "../platforms/macos/policies/*.yml")
@@ -107,6 +111,27 @@ pub struct Policy {
     /// Fleet-Maintained App metadata, so `query` is optional when set.
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub policy_type: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fleet_maintained_app_slug: Option<String>,
+
+    /// Pin a specific Fleet-Maintained App version for a patch policy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+
+    /// Can be `true` (boolean, on patch policies, to install the FMA on fail)
+    /// or an object with `package_path`, `hash_sha256`, `app_store_id`, or
+    /// `fleet_maintained_app_slug` (PolicyInstallSoftware in gitops.go:231-236).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_software: Option<JsonValue>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_script: Option<RunScript>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunScript {
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

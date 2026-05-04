@@ -676,8 +676,13 @@ fn complete_policy_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
             false,
         ),
         ("labels_include_any", "Target hosts with any of these labels", false),
-        ("labels_include_all", "Target hosts with all of these labels", false),
         ("labels_exclude_any", "Exclude hosts with any of these labels", false),
+        (
+            "webhooks_and_tickets_enabled",
+            "Add this policy to the failing-policies webhook (GitOps convenience)",
+            false,
+        ),
+        ("team", "Fleet (team) this policy belongs to", false),
     ];
 
     fields

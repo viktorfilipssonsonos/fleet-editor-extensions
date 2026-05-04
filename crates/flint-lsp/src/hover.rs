@@ -184,9 +184,12 @@ fn determine_hover_content(
         }
     }
 
-    // Fallback: try to find any matching field doc
+    // Fallback: try to find any matching field doc.
+    // Require an exact segment-boundary match so e.g. hovering on `webhook`
+    // doesn't get routed to docs for `failing_policies_webhook`.
+    let suffix = format!(".{}", word);
     for (path, doc) in FIELD_DOCS.iter() {
-        if path.ends_with(word) {
+        if path.ends_with(suffix.as_str()) || *path == word {
             return Some(doc.to_markdown());
         }
     }
