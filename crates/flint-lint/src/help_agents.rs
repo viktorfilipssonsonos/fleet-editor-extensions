@@ -91,24 +91,53 @@ pub fn generate_index(cmd: &clap::Command, writer: &mut impl Write) -> Result<()
     )?;
     writeln!(
         buf,
-        "- editor setup, VS Code, Neovim, Zed, Sublime, JetBrains → `--sop lsp`"
+        "- editor setup (VS Code, Zed, Sublime) → `--sop lsp`"
+    )?;
+    writeln!(
+        buf,
+        "- install/remove a non-blocking pre-commit hook → `--sop hooks`"
+    )?;
+    writeln!(
+        buf,
+        "- author Fleet GitOps YAML correctly the first time → `--sop author`"
+    )?;
+    writeln!(
+        buf,
+        "- extend flint with a new Fleet YAML field (working ON this repo) → `--sop add-field`"
     )?;
     writeln!(buf)?;
     writeln!(
         buf,
-        "**SOPs:** Run `{name} help-ai --sop <tool>` for step-by-step workflows:"
+        "All SOPs are written in **procedural format** — read top-to-bottom as PROCEDUREs"
     )?;
     writeln!(
         buf,
-        "- `--sop lint` — linting workflow (init → check → fix → json output)"
+        "with numbered phases, ASSERTs, and explicit RETURN points. Run `{name} help-ai`"
+    )?;
+    writeln!(buf, "`--sop <tool>` to print one:")?;
+    writeln!(
+        buf,
+        "- `--sop lint`        — lint workflow (config discovery → check → classify exit → CI)"
     )?;
     writeln!(
         buf,
-        "- `--sop migrate` — version migration (report → rename → verify)"
+        "- `--sop migrate`     — version migration (report → renames bottom-up → verify)"
     )?;
     writeln!(
         buf,
-        "- `--sop lsp` — editor setup guide for all supported editors"
+        "- `--sop lsp`         — editor setup for VS Code / Zed / Sublime"
+    )?;
+    writeln!(
+        buf,
+        "- `--sop hooks`       — `.git/hooks/pre-commit` install + uninstall + mode switching"
+    )?;
+    writeln!(
+        buf,
+        "- `--sop author`      — schema-as-contract loop for authoring Fleet YAML"
+    )?;
+    writeln!(
+        buf,
+        "- `--sop add-field`   — repo-extension procedure (schema → registry → docs → tests)"
     )?;
     writeln!(buf)?;
 
@@ -340,12 +369,22 @@ fn write_command_full(buf: &mut String, cmd: &clap::Command, parent: &str) -> Re
 // ── SOP mode ─────────────────────────────────────────────────────────
 
 /// Generate standard operating procedures for a specific tool.
+///
+/// SOPs are written in **procedural format** — they read as PROCEDUREs with
+/// numbered phases, ASSERTs, IF/CASE branches, and explicit RETURN points.
+/// The intent is that an AI agent can execute the steps directly without
+/// needing to reverse-engineer the workflow from prose.
 pub fn generate_sop(tool: &str, writer: &mut impl Write) -> Result<()> {
     let sop = match tool.to_lowercase().as_str() {
         "lint" | "check" => SOP_LINT,
         "migrate" | "migration" => SOP_MIGRATE,
         "lsp" | "editor" | "editors" => SOP_LSP,
-        _ => bail!("Unknown SOP: '{tool}'. Available: lint, migrate, lsp"),
+        "hooks" | "hook" | "pre-commit" => SOP_HOOKS,
+        "author" | "yaml" | "write" => SOP_AUTHOR,
+        "add-field" | "addfield" | "extend" | "schema" => SOP_ADD_FIELD,
+        _ => bail!(
+            "Unknown SOP: '{tool}'. Available: lint, migrate, lsp, hooks, author, add-field"
+        ),
     };
     writer.write_all(sop.as_bytes())?;
     Ok(())
@@ -353,146 +392,370 @@ pub fn generate_sop(tool: &str, writer: &mut impl Write) -> Result<()> {
 
 const SOP_LINT: &str = r#"# SOP: Linting Fleet GitOps YAML
 
-## Setup
-```
-1. flint init                                  # create .fleetlint.toml (auto-detects repo structure)
-2. flint init --no-interactive                 # non-interactive mode with defaults
-```
+PROCEDURE lint_repo(path):
+  ASSERT path is a directory or a YAML file (*.yml / *.yaml)
 
-## Lint files
-```
-1. flint check <path>                          # lint single file or directory
-2. flint check <path> --format json            # structured JSON output
-```
+  # Phase 1 — Configuration discovery
+  flint walks from <path> upward looking for `.fleetlint.toml`.
+  IF NOT FOUND:
+    RUN with defaults (no-op, all rules at default severity)
+  IF you want repo-wide config:
+    RUN: `flint init --no-interactive`        # auto-detects layout
+    EDIT .fleetlint.toml (see Config block below)
 
-## Auto-fix
-```
-1. flint check <path> --fix                    # apply safe fixes only
-2. flint check <path> --fix --unsafe-fixes     # also apply risky fixes
-```
+  # Phase 2 — Run the linter
+  RUN: `flint check <path>`
+  CAPTURE: stdout + exit code
 
-## Inspect rules
-```
-1. flint list-rules                            # table of all rules
-2. flint list-rules --format json              # rules as JSON with metadata
-```
+  # Phase 3 — Classify exit
+  IF exit == 0:
+    RETURN: clean — proceed
+  IF exit == 1:
+    PARSE diagnostics from stdout
+    FOR EACH diagnostic d:
+      IF d.severity == "error":
+        IF d.fix_safety == "Safe":     SUGGEST: re-run with `--fix`
+        IF d.fix_safety == "Unsafe":   SUGGEST: `--fix --unsafe-fixes` + manual diff
+        IF d.help is set:              the help text describes the fix
+        IF d.suggestion is set:        the suggestion is the literal replacement text
+      IF d is a known false positive:
+        SUPPRESS_OPTIONS:
+          (a) inline:    append `# flint: ignore [<rule_code>]` on the offending line
+          (b) repo-wide: add to .fleetlint.toml [rules] disabled = ["<rule_code>"]
+    HALT until errors == 0
+  IF exit == 2:
+    flint crashed — file an issue with stderr
 
-## Configuration (.fleetlint.toml)
+  # Phase 4 — Machine-readable mode (CI / agents)
+  RUN: `flint check <path> --format json`
+  PARSE: { version, files: [{ counts, diagnostics: [{...}] }], summary }
+  EXIT_CODE_CONTRACT: 0 = clean, 1 = errors, 2 = flint crash
+
+  # Phase 5 — Inspect what flint enforces
+  RUN: `flint list-rules`              # table view
+  RUN: `flint list-rules --format json` # for programmatic use
+
+# Configuration (.fleetlint.toml)
 ```toml
 [rules]
-disabled = ["secret-hygiene"]        # disable specific rules
+disabled = ["secret-hygiene"]        # silence specific rules entirely
 warn = ["interval-validation"]       # downgrade errors to warnings
 
 [thresholds]
-min_interval = 60                    # minimum query interval (seconds)
-max_interval = 86400                 # maximum query interval
+min_interval = 60                    # query interval bounds (seconds)
+max_interval = 86400
 
 [files]
 include = ["**/*.yml", "**/*.yaml"]
 exclude = ["node_modules", "target"]
 
 [deprecations]
-fleet_version = "4.85.0"            # target version for deprecation checks
-future_names = true                  # opt-in to new naming (reports, settings, fleets)
+fleet_version = "4.85.0"             # target version for deprecation checks
+future_names = true                  # opt in to new naming (reports, settings, fleets)
 ```
 
-## Inline suppressions
-```yaml
-queries:  # flint: ignore [deprecated-keys]
-```
-
-## Key flags
-- `--format json` — structured output for programmatic consumption
-- `--fix` — auto-apply safe fixes (key renames, typo corrections)
-- `--unsafe-fixes` — also apply fixes that may change semantics (requires --fix)
+# Key flags
+- `--format json`        — structured output (CI, scripts, agents)
+- `--fix`                — auto-apply Safe fixes (renames, typo corrections)
+- `--unsafe-fixes`       — also apply Unsafe fixes (requires `--fix`)
+- `--hook-mode`          — always exit 0 (used by `flint hooks install`)
 "#;
 
 const SOP_MIGRATE: &str = r#"# SOP: Fleet GitOps Migration
 
-Migrate a Fleet GitOps repo to a target version using `flint migrate`.
+PROCEDURE migrate_repo(path, target_version):
+  ASSERT path is a Fleet GitOps repo root
+  ASSERT target_version is a Fleet release (e.g. "4.85.0" or "latest")
 
-## Step 1: Generate migration report
-```
-flint migrate <path> --target-version <version>
-```
-Output is JSON with:
-- `summary` — counts: files_scanned, directory_renames, file_renames, key_renames, safe_fixes
-- `directory_renames[]` — `{ old, new, files_affected }`
-- `file_renames[]` — `{ old, new }`
-- `file_changes[]` — `{ path, move_to?, key_renames[] }` where each key_rename has `{ line, old_key, new_key, safety }`
+  # Phase 1 — Generate the migration report (read-only)
+  RUN: `flint migrate <path> --target-version <version>` -> JSON
+  PARSE: {
+    summary: { files_scanned, directory_renames, file_renames, key_renames, safe_fixes },
+    directory_renames: [{ old, new, files_affected }],
+    file_renames:      [{ old, new }],
+    file_changes:      [{ path, move_to?, key_renames: [{ line, old_key, new_key, safety }] }],
+  }
+  ASSERT summary.files_scanned > 0
 
-## Step 2: Apply directory renames (first)
-```
-mv <path>/teams/ <path>/fleets/
-```
+  # Phase 2 — Directory renames FIRST (other phases reference the new paths)
+  FOR EACH dr IN directory_renames:
+    RUN: `mv <path>/<dr.old> <path>/<dr.new>`
+    ASSERT <path>/<dr.old> no longer exists
 
-## Step 3: Apply file renames
-- Root level: `mv <path>/no-team.yml <path>/unassigned.yml`
-- Inside moved dirs: `mv <path>/fleets/no-team.yml <path>/fleets/unassigned.yml`
+  # Phase 3 — File renames
+  FOR EACH fr IN file_renames:
+    RUN: `mv <path>/<fr.old> <path>/<fr.new>`
+    NOTE: a file inside a renamed directory uses the new directory name
 
-## Step 4: Apply key renames
-For each file in `file_changes`:
-- Use `move_to` path if set (directory was moved in Step 2)
-- Apply renames bottom-up (highest line number first) to preserve offsets
-- Replace `old_key:` with `new_key:` at the specified line
+  # Phase 4 — In-file key renames (apply bottom-up to preserve line offsets)
+  FOR EACH fc IN file_changes:
+    target := fc.move_to OR fc.path
+    SORT fc.key_renames BY line DESC
+    FOR EACH kr IN fc.key_renames:
+      REPLACE first occurrence of "<kr.old_key>:" at line <kr.line> in <target>
+              with "<kr.new_key>:"
+      IF kr.safety == "warning":
+        REVIEW: rename has semantic implications — human eyeball recommended
 
-## Step 5: Update cross-file path references
-```
-grep -rn "teams/" <path>/**/*.yml      # find stale path: references
-grep -rn "no-team.yml" <path>/**/*.yml
-```
-Replace: teams/ -> fleets/, no-team.yml -> unassigned.yml
+  # Phase 5 — Cross-file path references
+  GREP for old names that may appear inside YAML `path:` / `paths:` values:
+    `grep -rn "<old_dir>/" <path>/**/*.yml`
+    `grep -rn "<old_file>" <path>/**/*.yml`
+  REWRITE matches manually, or via sed for the obvious cases
 
-## Step 6: Verify
-```
-flint check <path>                     # confirm zero deprecation warnings
-```
+  # Phase 6 — Verify
+  RUN: `flint check <path>`
+  ASSERT no deprecation warnings remain
+  RETURN: clean diff ready for PR
 
-## Current renames (warnings since v4.80.1)
-- Directory: `teams/` -> `fleets/`
-- File: `no-team.yml` -> `unassigned.yml`
-- Key: `team_settings` -> `settings`
-- Key: `queries` -> `reports`
+# Current renames (warnings since v4.80.1)
+- Directory: `teams/`          -> `fleets/`
+- File:      `no-team.yml`     -> `unassigned.yml`
+- Key:       `team_settings:`  -> `settings:`
+- Key:       `queries:`        -> `reports:`  (top-level only)
 "#;
 
 const SOP_LSP: &str = r#"# SOP: Editor Setup (LSP)
 
-All editors use `flint lsp` as a language server subprocess.
+PROCEDURE setup_editor(editor):
+  ASSERT editor IN {vscode, zed, sublime}
+  ASSERT `flint --version` succeeds (binary on PATH)
 
-## VS Code
-Install the `fleetdm.flint` extension from the marketplace.
+  CASE editor:
+    vscode:
+      INSTALL: VSIX from the GitHub release (`flint-<v>.vsix`) or the
+               marketplace listing (when published).
+      LOAD a Fleet GitOps YAML and verify diagnostics + hover appear.
 
-## Neovim
-```lua
-require('flint').setup()
-```
-Or add to lua/flint.lua (see editors/neovim/).
+    zed:
+      EDIT  ~/.config/zed/settings.json:
+        ADD `"language_servers": ["flint-lsp"]` for the YAML language entry
+        DISABLE the default yaml-language-server for Fleet YAML files
+      INSTALL the extension via the Zed extension registry, OR sideload
+              `flint-zed-<v>.zip` from the GitHub release.
 
-## Zed
-Install the flint extension from the Zed extension gallery.
+    sublime:
+      INSTALL Package Control
+      INSTALL the `LSP` package
+      INSTALL the `LSP-flint` package — its plugin auto-pulls
+              `flint-<v>-darwin-arm64.tar.gz` from the latest GitHub release
+              on first activation.
 
-## Sublime Text
-1. Install Package Control
-2. Install LSP package
-3. Install Flint LSP package (see editors/sublime/)
+  # Verification (same for every editor)
+  OPEN any Fleet GitOps YAML
+  ASSERT hover on a documented field shows description + valid values
+  ASSERT a typo in a known key surfaces a diagnostic in real time
+  ASSERT `path:` value completion offers files in the workspace
 
-## JetBrains (IntelliJ, etc.)
-Install the Flint plugin (see editors/jetbrains/).
+# Capabilities (what the LSP provides)
+- diagnostics       — real-time, every keystroke
+- hover             — field/table docs, valid values, examples
+- completion        — keys, platform values, osquery tables, common labels, paths/globs
+- code actions      — quick fixes for deprecated keys + typos
+- go-to-definition  — `path:` references, label name references
+- document symbols  — outline of the YAML
+- semantic tokens   — SQL syntax inside `query:` values
 
-## What the LSP provides
-- Real-time diagnostics (linting on every keystroke)
-- Hover documentation (field descriptions, platform info)
-- Autocompletion (keys, platforms, osquery tables, SQL keywords)
-- Code actions (quick-fixes for deprecated keys, typos)
-- Go-to-definition (path references)
-- Document symbols and folding
-- Semantic syntax highlighting
+# Configuration
+The LSP reads `.fleetlint.toml` (same format as `flint check`):
+- [rules]        — disabled / warn lists
+- [thresholds]   — query interval bounds
+- [deprecations] — target Fleet version, future_names opt-in
+"#;
 
-## Configuration
-The LSP reads `.fleetlint.toml` for:
-- Rule configuration (disabled rules, warning overrides)
-- Fleet server connection (URL, token for live validation)
-- Deprecation settings (target version, future_names opt-in)
+const SOP_HOOKS: &str = r#"# SOP: Pre-commit git hooks
+
+PROCEDURE install_hook(repo_root, mode):
+  ASSERT repo_root contains `.git/`
+  ASSERT mode IN {non-blocking, strict, json, strict+json}
+
+  CD repo_root
+
+  CASE mode:
+    non-blocking:   `flint hooks install`                  # default
+    strict:         `flint hooks install --strict`         # errors block commits
+    json:           `flint hooks install --json`           # structured output
+    strict+json:    `flint hooks install --strict --json`  # block + JSON
+
+  IF an existing pre-commit hook is present and not authored by flint:
+    flint refuses to overwrite — re-run with `--force` to overwrite, or
+    move the existing hook aside first.
+
+  ASSERT `.git/hooks/pre-commit` is now executable (chmod 755).
+
+PROCEDURE remove_hook(repo_root):
+  CD repo_root
+  RUN: `flint hooks uninstall`
+  ASSERT it refuses if the existing hook was not authored by flint.
+
+# Behavior contract (what the generated hook does)
+- Runs `flint check` only on staged YAML files (or the whole repo if none staged).
+- Non-blocking (default): always exits 0 — diagnostics print but commits proceed.
+- Strict: flint's native exit code propagates. Bypass with `git commit --no-verify`.
+- JSON: emits structured diagnostics suitable for CI piping or `jq` parsing.
+- Auto-skips if `flint` is not on PATH (logs a single warning to stderr).
+
+# How to switch modes later
+  RUN: `flint hooks install --force <new flags>`     # overwrite in place
+  e.g. switch from non-blocking to strict:
+       `flint hooks install --force --strict`
+
+# How to debug
+  cat .git/hooks/pre-commit | head -10
+  → the comment header records `Strict mode: <bool>. JSON output: <bool>.`
+"#;
+
+const SOP_AUTHOR: &str = r#"# SOP: Authoring Fleet GitOps YAML against flint's schema
+
+PROCEDURE author_fleet_yaml(target_file, intent):
+  # Audience: any agent (or human) writing Fleet GitOps YAML in any repo.
+
+  # Phase 1 — Identify the file kind from its path (flint auto-detects)
+  CASE target_file:
+    *default.yml              -> top-level FleetConfig (org_settings, controls, …)
+    fleets/**/*.yml           -> per-fleet config (settings.webhook_settings allowed)
+    fleets/unassigned.yml     -> "Unassigned" fleet (alias of a per-fleet file)
+    labels/**/*.yml           -> standalone label array (top-level sequence)
+    */policies/**/*.yml       -> standalone policy array (top-level sequence)
+    */queries/**/*.yml        -> standalone query/report array
+    */software/**/*.yml       -> standalone software-package config
+    agent-options*.yml        -> standalone agent_options config
+
+  # Phase 2 — Consult the schema BEFORE writing
+  REFERENCE: editors/vscode/schemas/<kind>.schema.json
+             (mirrors the rules `flint check` will apply)
+  REFERENCE for canonical Fleet keys:
+    /Users/henry/Code/GitHub/fleet/docs/Configuration/yaml-files.md
+    /Users/henry/Code/GitHub/fleet/docs/REST API/rest-api.md
+    /Users/henry/Code/GitHub/fleet/cmd/fleetctl/fleetctl/testdata/generateGitops/
+
+  # Phase 3 — Draft
+  WRITE the YAML following the schema for <kind>
+  AVOID keys not in the schema (`flint check` will flag them)
+  PREFER canonical names over the deprecated forms:
+    `fleets/`          NOT `teams/`
+    `settings:`        NOT `team_settings:`
+    `reports:`         NOT `queries:`           (top-level only)
+    `unassigned.yml`   NOT `no-team.yml`
+
+  # Phase 4 — Validate
+  RUN: `flint check <target_file>`
+  IF errors > 0:
+    READ each diagnostic — `help` describes the issue, `suggestion` gives the fix
+    LOOP back to Phase 3
+  IF warnings > 0:
+    EVALUATE each — they are typically not blocking but worth fixing
+
+  # Phase 5 — Cross-file gate
+  IF target_file references other files via `path:` or `paths:`:
+    ASSERT each referenced file exists relative to the current file
+    RUN: `flint check <repo_root>` to validate the whole graph
+
+  # Phase 6 — Commit gate
+  IF the repo has a flint pre-commit hook installed:
+    `git commit` will run `flint check --hook-mode` automatically.
+  ELSE:
+    OPTIONAL: install one — see `flint help-agents --sop hooks`.
+
+# What flint catches that a plain YAML linter does not
+- misplaced keys (e.g. `webhooks_and_tickets_enabled` under `integrations:`)
+- multi-platform false positives (`platform: darwin,linux` is split correctly)
+- patch-policy coupling (`type: patch` requires `fleet_maintained_app_slug`)
+- per-fleet vs org-only constraints (`vulnerabilities_webhook` is org-only)
+- deprecated keys with a fix suggestion (`teams:` → `fleets:`)
+- osquery table availability per platform (e.g. `usb_devices` is darwin+linux only)
+"#;
+
+const SOP_ADD_FIELD: &str = r#"# SOP: Add a new Fleet YAML field to flint
+# Audience: agents working ON this repo (extending the schema/linter).
+
+PROCEDURE add_fleet_field(field_name, parent_path, field_type, valid_values?):
+  # parent_path uses dot notation:
+  #   "controls"             "policies[]"           "labels[].criteria"
+  #   "agent_options"        "software.packages[]"  "team_settings.webhook_settings"
+
+  # Phase 1 — Source of truth
+  REFERENCE one or more of:
+    /Users/henry/Code/GitHub/fleet/docs/Configuration/yaml-files.md
+    /Users/henry/Code/GitHub/fleet/docs/REST API/rest-api.md
+    /Users/henry/Code/GitHub/fleet/pkg/spec/gitops.go
+    /Users/henry/Code/GitHub/fleet/server/fleet/*.go
+    /Users/henry/Code/GitHub/fleet/cmd/fleetctl/fleetctl/testdata/generateGitops/
+  ASSERT field_name + parent_path are confirmed by at least one source.
+
+  # Phase 2 — Structural schema
+  EDIT crates/flint-lint/src/structure.rs
+  LOCATE the helper that builds <parent_path>'s children
+         (e.g. policy_inline_strict, controls_schema, agent_options_inline)
+  ADD: ("<field_name>", <node>)
+       where <node> is one of:
+         leaf()                       — opaque scalar
+         boolean_leaf()               — strict bool
+         array(item_node)             — sequence
+         mapping(vec![...])           — fixed-key object
+         open_mapping()               — additionalProperties: true
+
+  # Phase 3 — Key registry (typo + misplaced-key detection)
+  EDIT same file (KEY_REGISTRY block)
+  ADD: reg.register("<field_name>", "<parent_path>");
+  IF the key is also valid under additional parents:
+    REGISTER under each — KeyRegistry stores a Vec<&str> per key.
+
+  # Phase 4 — Hover docs (LSP)
+  EDIT crates/flint-lsp/src/schema.rs (FIELD_DOCS HashMap)
+  INSERT m.insert(
+    "<parent_path>.<field_name>",
+    FieldDoc {
+      name: "<field_name>",
+      description: "...",
+      valid_values: <Option<&[&str]>>,
+      example: Some("<field_name>: <value>"),
+      required: <bool>,
+      field_type: "<rendered type>",
+      cli_hint: None,
+    },
+  );
+
+  # Phase 5 — Completion (LSP)
+  EDIT crates/flint-lsp/src/completion.rs
+  LOCATE the matching `complete_*_fields` function
+  ADD a tuple: ("<field_name>", "<short description>", <required: bool>)
+  IF field has an enum:
+    ADD a value-position branch in the same function that returns the enum.
+
+  # Phase 6 — JSON Schemas (used by VS Code's yaml-language-server)
+  IF a per-kind schema exists for this parent:
+    EDIT editors/vscode/schemas/<kind>.schema.json
+    EDIT .vscode/fleet-gitops-schema/<kind>.schema.json   (mirror)
+
+  # Phase 7 — Tests (regression guard)
+  EDIT one of:
+    crates/flint-lint/src/structural.rs   (structural acceptance/rejection)
+    crates/flint-lint/src/semantic.rs     (semantic coupling rules)
+    crates/flint-lint/src/engine.rs       (end-to-end via Linter)
+  ADD a test using the new field in a realistic snippet.
+  ASSERT no errors (positive case) AND a clear error for misuse (negative case).
+
+  # Phase 8 — Validate
+  RUN: `cargo test --workspace`
+  RUN: `cargo clippy -p flint-lint --lib --no-deps -- -D warnings`
+  RUN: `cargo clippy -p flint-lsp --lib --no-deps -- -D warnings`
+  RUN: `cargo build --release -p flint`
+  RUN: `target/release/flint check <fixture-with-the-new-field>` -> expect clean
+
+  # Phase 9 — End-to-end on a real repo
+  RUN: `target/release/flint check /Users/henry/Code/GitHub/LGW-gitops`
+  ASSERT no NEW errors vs the pre-change baseline.
+
+  # Phase 10 — Bump (only if shipping)
+  See `flint help-agents --sop release` (separate procedure):
+    bump version in 6 spots, regenerate Cargo.lock, run release script.
+
+# Anti-patterns
+- Adding a field only to FIELD_DOCS or only to structure.rs → users get
+  inconsistent UX (hover but no completion, or completion but no validation).
+- Forgetting KEY_REGISTRY → typo suggestions become useless for the new key.
+- Skipping a regression test → the next refactor will silently break it.
 "#;
 
 // ── JSON mode ────────────────────────────────────────────────────────
@@ -766,6 +1029,43 @@ mod tests {
         generate_sop("lint", &mut out).unwrap();
         let output = String::from_utf8(out).unwrap();
         assert!(output.contains("SOP: Linting"));
+        // Procedural format: every SOP must read as a PROCEDURE.
+        assert!(
+            output.contains("PROCEDURE "),
+            "lint SOP should be in procedural format"
+        );
+    }
+
+    #[test]
+    fn test_all_sops_use_procedural_format() {
+        for tool in ["lint", "migrate", "lsp", "hooks", "author", "add-field"] {
+            let mut out = Vec::new();
+            generate_sop(tool, &mut out)
+                .unwrap_or_else(|e| panic!("SOP '{tool}' missing: {e}"));
+            let output = String::from_utf8(out).unwrap();
+            assert!(
+                output.contains("PROCEDURE "),
+                "SOP '{tool}' should be in procedural format (must contain PROCEDURE)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_generate_sop_aliases_resolve() {
+        // Each SOP should be reachable by at least one ergonomic alias.
+        for alias in [
+            "check",       // lint
+            "migration",   // migrate
+            "editor",      // lsp
+            "pre-commit",  // hooks
+            "yaml",        // author
+            "addfield",    // add-field
+        ] {
+            let mut out = Vec::new();
+            generate_sop(alias, &mut out)
+                .unwrap_or_else(|e| panic!("alias '{alias}' should resolve: {e}"));
+            assert!(!out.is_empty(), "alias '{alias}' returned empty output");
+        }
     }
 
     #[test]
