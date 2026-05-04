@@ -360,33 +360,36 @@ impl Rule for TypeValidationRule {
         if let Some(policies) = &config.policies {
             for policy_or_path in policies {
                 if let super::fleet_config::PolicyOrPath::Policy(policy) = policy_or_path {
-                    // Platform must be valid enum
+                    // Platform may be a single value or comma-separated (e.g. "darwin,linux"),
+                    // and an empty string means "all platforms". Validate each component.
                     if let Some(platform) = &policy.platform {
-                        if ![
+                        const VALID: &[&str] = &[
                             "darwin", "windows", "linux", "chrome", "ios", "ipados", "android",
-                        ]
-                        .contains(&platform.as_str())
+                        ];
+                        for component in platform.split(',').map(str::trim).filter(|p| !p.is_empty())
                         {
-                            let mut err = LintError::error(
-                                format!(
-                                    "Policy '{}' has invalid platform '{}'",
-                                    policy.name.as_deref().unwrap_or("unnamed"),
-                                    platform
-                                ),
-                                file,
-                            )
-                            .with_help("Valid platforms: darwin, windows, linux, chrome, ios, ipados, android")
-                            .with_suggestion(find_similar_platform(platform))
-                            .with_fix_safety(super::error::FixSafety::Safe)
-                            .with_context(platform.clone());
+                            if !VALID.contains(&component) {
+                                let mut err = LintError::error(
+                                    format!(
+                                        "Policy '{}' has invalid platform '{}'",
+                                        policy.name.as_deref().unwrap_or("unnamed"),
+                                        component
+                                    ),
+                                    file,
+                                )
+                                .with_help("Valid platforms: darwin, windows, linux, chrome, ios, ipados, android")
+                                .with_suggestion(find_similar_platform(component))
+                                .with_fix_safety(super::error::FixSafety::Safe)
+                                .with_context(component.to_string());
 
-                            // Find line number in source for --fix support
-                            if let Some(line) =
-                                super::yaml_utils::find_key_line(_source, "platform", 0)
-                            {
-                                err = err.with_location(line, 1);
+                                // Find line number in source for --fix support
+                                if let Some(line) =
+                                    super::yaml_utils::find_key_line(_source, "platform", 0)
+                                {
+                                    err = err.with_location(line, 1);
+                                }
+                                errors.push(err);
                             }
-                            errors.push(err);
                         }
                     }
                 }
@@ -501,28 +504,46 @@ fn check_query_platform_compat(
     let mut errors = Vec::new();
     let query_lower = query.to_lowercase();
 
+    // Fleet's `platform` field is comma-separated (e.g. "darwin,linux")
+    // meaning the query targets *all* listed platforms. Split before
+    // comparing so we don't emit a literal-string false positive.
+    // Empty string means "all platforms" — skip the check entirely.
+    let trimmed = platform.trim();
+    if trimmed.is_empty() {
+        return errors;
+    }
+    let target_platforms: Vec<&str> = trimmed
+        .split(',')
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .collect();
+
     // Extract table names from query (simple regex for FROM clauses)
     let re = regex::Regex::new(r"\bfrom\s+(\w+)").unwrap();
     for cap in re.captures_iter(&query_lower) {
         let table = &cap[1];
 
-        // Check if table exists for this platform
         if let Some(table_info) = OSQUERY_TABLES.get(table) {
-            if !table_info.platforms.contains(&platform) {
-                errors.push(
-                    LintError::error(
-                        format!(
-                            "{} uses table '{}' which is not available on platform '{}'",
-                            item_name, table, platform
-                        ),
-                        file,
-                    )
-                    .with_help(format!(
-                        "Table '{}' is only available on: {}",
-                        table,
-                        table_info.platforms.join(", ")
-                    )),
-                );
+            // Flag each individual platform that the table doesn't support.
+            // A query targeting `darwin,linux` against a darwin-only table
+            // should report an error for `linux`, not for the joined string.
+            for p in &target_platforms {
+                if !table_info.platforms.contains(p) {
+                    errors.push(
+                        LintError::error(
+                            format!(
+                                "{} uses table '{}' which is not available on platform '{}'",
+                                item_name, table, p
+                            ),
+                            file,
+                        )
+                        .with_help(format!(
+                            "Table '{}' is only available on: {}",
+                            table,
+                            table_info.platforms.join(", ")
+                        )),
+                    );
+                }
             }
         }
     }
@@ -1011,6 +1032,91 @@ mod tests {
         assert!(
             !result.contains("Drop"),
             "Drop inside string literal should be blanked"
+        );
+    }
+
+    // -- Issue #4: comma-separated platform handling --
+
+    #[test]
+    fn platform_compat_single_platform_supported() {
+        // usb_devices is on darwin — should be clean.
+        let errs = check_query_platform_compat(
+            "SELECT 1 FROM usb_devices",
+            "darwin",
+            "Query 'q'",
+            std::path::Path::new("test.yml"),
+        );
+        assert!(errs.is_empty(), "got: {:?}", errs);
+    }
+
+    #[test]
+    fn platform_compat_comma_separated_all_supported() {
+        // usb_devices is on darwin+linux — `darwin,linux` must NOT trigger
+        // (was Bug A in issue #4: literal "darwin,linux" never matched).
+        let errs = check_query_platform_compat(
+            "SELECT 1 FROM usb_devices",
+            "darwin,linux",
+            "Query 'q'",
+            std::path::Path::new("test.yml"),
+        );
+        assert!(errs.is_empty(), "got: {:?}", errs);
+    }
+
+    #[test]
+    fn platform_compat_comma_separated_with_unsupported() {
+        // Targeting darwin,windows but usb_devices isn't on Windows.
+        // Expect a single error pinpointing `windows`, not the joined string.
+        let errs = check_query_platform_compat(
+            "SELECT 1 FROM usb_devices",
+            "darwin,windows",
+            "Query 'q'",
+            std::path::Path::new("test.yml"),
+        );
+        assert_eq!(errs.len(), 1);
+        assert!(
+            errs[0].message.contains("'windows'"),
+            "expected error to name 'windows', got: {}",
+            errs[0].message
+        );
+    }
+
+    #[test]
+    fn platform_compat_empty_platform_skips() {
+        // Empty platform = "all platforms" — flint shouldn't second-guess.
+        let errs = check_query_platform_compat(
+            "SELECT 1 FROM usb_devices",
+            "",
+            "Query 'q'",
+            std::path::Path::new("test.yml"),
+        );
+        assert!(errs.is_empty());
+    }
+
+    #[test]
+    fn platform_compat_handles_whitespace_in_list() {
+        let errs = check_query_platform_compat(
+            "SELECT 1 FROM usb_devices",
+            "darwin , linux",
+            "Query 'q'",
+            std::path::Path::new("test.yml"),
+        );
+        assert!(errs.is_empty(), "whitespace tolerance: got {:?}", errs);
+    }
+
+    #[test]
+    fn platform_compat_usb_devices_rejects_windows() {
+        // Issue #4 Bug B regression: usb_devices is darwin+linux only,
+        // NOT windows. Source: fleetdm/fleet schema/osquery_fleet_schema.json.
+        let errs = check_query_platform_compat(
+            "SELECT 1 FROM usb_devices",
+            "windows",
+            "Query 'q'",
+            std::path::Path::new("test.yml"),
+        );
+        assert!(
+            errs.iter().any(|e| e.message.contains("usb_devices")),
+            "windows should be unsupported for usb_devices: {:?}",
+            errs
         );
     }
 }
