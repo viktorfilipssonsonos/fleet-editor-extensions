@@ -186,7 +186,15 @@ impl Rule for RequiredFieldsRule {
                             );
                         }
 
-                        if policy.query.is_none() || policy.query.as_ref().unwrap().is_empty() {
+                        let is_patch = policy
+                            .policy_type
+                            .as_deref()
+                            .map(|t| t == "patch")
+                            .unwrap_or(false);
+                        if !is_patch
+                            && (policy.query.is_none()
+                                || policy.query.as_ref().unwrap().is_empty())
+                        {
                             errors.push(
                                 LintError::error(
                                     format!(
@@ -195,7 +203,7 @@ impl Rule for RequiredFieldsRule {
                                     ),
                                     file,
                                 )
-                                .with_help("Policies must have a query field with osquery SQL")
+                                .with_help("Policies must have a query field with osquery SQL (or set type: patch for Fleet Maintained App patch policies)")
                                 .with_suggestion("query: \"SELECT 1 FROM ...;\""),
                             );
                         }

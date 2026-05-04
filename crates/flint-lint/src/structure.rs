@@ -177,6 +177,7 @@ fn macos_setup() -> SchemaNode {
         // New names (renameto tags from Go code)
         ("macos_bootstrap_package", leaf()),
         ("macos_manual_agent_install", boolean_leaf()),
+        ("require_all_software_macos", boolean_leaf()),
         ("apple_enable_release_device_manually", boolean_leaf()),
         ("apple_setup_assistant", leaf()),
         ("macos_script", leaf()),
@@ -270,6 +271,7 @@ fn controls_schema() -> SchemaNode {
         ("windows_migration_enabled", boolean_leaf()),
         ("enable_disk_encryption", boolean_leaf()),
         ("enable_recovery_lock_password", boolean_leaf()),
+        ("apple_require_hardware_attestation", boolean_leaf()),
         ("volume_purchasing_program", open_mapping()),
         ("windows_require_bitlocker_pin", boolean_leaf()),
         ("macos_updates", macos_updates()),
@@ -299,13 +301,21 @@ fn policy_inline_strict() -> SchemaNode {
         ("conditional_access_bypass_enabled", boolean_leaf()),
         ("software_title_id", leaf()),
         ("script_id", leaf()),
+        ("type", leaf()),
+        ("fleet_maintained_app_slug", leaf()),
+        ("version", leaf()),
         ("labels_include_any", array(leaf())),
         ("labels_include_all", array(leaf())),
         ("labels_exclude_any", array(leaf())),
         ("run_script", mapping(vec![("path", leaf())])),
         (
             "install_software",
-            mapping(vec![("package_path", leaf()), ("hash_sha256", leaf())]),
+            mapping(vec![
+                ("package_path", leaf()),
+                ("hash_sha256", leaf()),
+                ("fleet_maintained_app_slug", leaf()),
+                ("app_store_id", leaf()),
+            ]),
         ),
     ])
 }
@@ -580,6 +590,7 @@ fn team_settings_strict() -> SchemaNode {
 
 fn agent_options_inline() -> SchemaNode {
     mapping(vec![
+        ("path", leaf()),
         ("config", open_mapping()),
         ("overrides", open_mapping()),
         ("command_line_flags", open_mapping()),
@@ -695,6 +706,9 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("enable_turn_on_windows_mdm_manually", "controls");
     reg.register("windows_migration_enabled", "controls");
     reg.register("enable_disk_encryption", "controls");
+    reg.register("enable_recovery_lock_password", "controls");
+    reg.register("apple_require_hardware_attestation", "controls");
+    reg.register("volume_purchasing_program", "controls");
     reg.register("windows_require_bitlocker_pin", "controls");
     reg.register("macos_updates", "controls");
     reg.register("ios_updates", "controls");
@@ -758,6 +772,7 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
         // New names (renameto tags)
         reg.register("macos_bootstrap_package", parent);
         reg.register("macos_manual_agent_install", parent);
+        reg.register("require_all_software_macos", parent);
         reg.register("apple_enable_release_device_manually", parent);
         reg.register("apple_setup_assistant", parent);
         reg.register("macos_script", parent);
@@ -904,6 +919,9 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("path", "reports[]");
     reg.register("paths", "reports[]");
 
+    // agent_options path reference
+    reg.register("path", "agent_options");
+
     // integrations children (under org_settings.integrations or team_settings.integrations)
     reg.register("conditional_access_enabled", "org_settings.integrations");
     reg.register("google_calendar", "org_settings.integrations");
@@ -927,6 +945,9 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("labels_exclude_any", "policies[]");
     reg.register("run_script", "policies[]");
     reg.register("install_software", "policies[]");
+    reg.register("type", "policies[]");
+    reg.register("fleet_maintained_app_slug", "policies[]");
+    reg.register("version", "policies[]");
     reg.register("path", "policies[]");
     reg.register("paths", "policies[]");
 

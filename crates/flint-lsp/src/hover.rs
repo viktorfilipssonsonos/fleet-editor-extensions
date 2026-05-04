@@ -184,9 +184,10 @@ fn determine_hover_content(
         }
     }
 
-    // Fallback: try to find any matching field doc
+    // Fallback: try to find any matching field doc (require exact segment match)
+    let suffix = format!(".{}", word);
     for (path, doc) in FIELD_DOCS.iter() {
-        if path.ends_with(word) {
+        if path.ends_with(suffix.as_str()) || *path == word {
             return Some(doc.to_markdown());
         }
     }

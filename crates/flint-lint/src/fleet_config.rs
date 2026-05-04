@@ -5,6 +5,7 @@
 //! typed access to the configuration beyond raw YAML.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 
 /// Fleet GitOps configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -102,6 +103,28 @@ pub struct Policy {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub calendar_events_enabled: Option<bool>,
+
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub policy_type: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fleet_maintained_app_slug: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+
+    /// Can be `true` (boolean, for patch policies) or an object with
+    /// `package_path`, `fleet_maintained_app_slug`, or `hash_sha256`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_software: Option<JsonValue>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_script: Option<RunScript>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunScript {
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

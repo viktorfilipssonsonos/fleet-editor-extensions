@@ -4,7 +4,16 @@
   "title": "Fleet Policy",
   "description": "Schema for Fleet policy configuration",
   "type": "object",
-  "required": ["name", "description", "query"],
+  "required": ["name"],
+  "if": {
+    "not": {
+      "properties": { "type": { "const": "patch" } },
+      "required": ["type"]
+    }
+  },
+  "then": {
+    "required": ["name", "query"]
+  },
   "properties": {
     "name": {
       "type": "string",
@@ -19,7 +28,6 @@
     "description": {
       "type": "string",
       "description": "Policy description - explains what the policy checks and why it matters",
-      "minLength": 1,
       "examples": [
         "Checks if the system firewall is enabled to protect against unauthorized network access",
         "Verifies full disk encryption is active on the device"
@@ -27,13 +35,28 @@
     },
     "query": {
       "type": "string",
-      "description": "SQL query that determines policy compliance. Query should return rows when compliant (passing), no rows when non-compliant (failing)",
+      "description": "SQL query that determines policy compliance. Required for standard policies; auto-generated when type: patch.",
       "minLength": 1,
       "examples": [
         "SELECT 1 FROM disk_encryption WHERE encrypted=1;",
         "SELECT 1 FROM system_info WHERE hostname LIKE '%-MBP-%';",
         "SELECT 1 FROM windows_security_center WHERE firewall='Good';"
       ]
+    },
+    "type": {
+      "type": "string",
+      "description": "Set to 'patch' to create a Fleet Maintained App patch policy. The SQL query is auto-generated.",
+      "enum": ["patch"]
+    },
+    "fleet_maintained_app_slug": {
+      "type": "string",
+      "description": "Fleet Maintained App slug for patch policies (e.g. zoom/darwin, firefox/windows)",
+      "examples": ["zoom/darwin", "firefox/windows", "slack/darwin"]
+    },
+    "version": {
+      "type": "string",
+      "description": "Pin a specific app version for patch policies",
+      "examples": ["5.17.0", "120.0"]
     },
     "platform": {
       "type": "string",
@@ -57,6 +80,11 @@
       "description": "Enable conditional access for this policy",
       "default": false
     },
+    "conditional_access_bypass_enabled": {
+      "type": "boolean",
+      "description": "Allow conditional access bypass (Premium)",
+      "default": false
+    },
     "labels_include_any": {
       "type": "array",
       "description": "Policy applies to hosts with any of these labels",
@@ -69,22 +97,32 @@
         ["Windows", "Linux"]
       ]
     },
+    "labels_exclude_any": {
+      "type": "array",
+      "description": "Exclude hosts with any of these labels",
+      "items": {
+        "type": "string"
+      }
+    },
     "install_software": {
-      "type": "object",
-      "description": "Software to install when policy fails (Premium feature, team-level only)",
+      "description": "Software to install when policy fails (Premium feature, team-level only). Use true for patch policies, or an object for custom packages.",
       "oneOf": [
         {
-          "required": ["package_path"],
+          "type": "boolean",
+          "description": "Set to true to auto-install the patch policy's Fleet Maintained App when the policy fails"
+        },
+        {
+          "type": "object",
+          "description": "Install a specific software package when the policy fails (Premium feature, team-level only)",
           "properties": {
             "package_path": {
               "type": "string",
-              "description": "Path to software package"
-            }
-          }
-        },
-        {
-          "required": ["hash_sha256"],
-          "properties": {
+              "description": "Path to a custom package YAML file"
+            },
+            "fleet_maintained_app_slug": {
+              "type": "string",
+              "description": "Fleet Maintained App identifier (e.g. zoom/darwin)"
+            },
             "hash_sha256": {
               "type": "string",
               "description": "SHA256 hash of software package",

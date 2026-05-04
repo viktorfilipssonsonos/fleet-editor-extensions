@@ -614,7 +614,7 @@ fn complete_policy_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
         ),
         ("name", "Policy display name (for inline definitions)", true),
         ("description", "What this policy checks", false),
-        ("query", "osquery SQL query", true),
+        ("query", "osquery SQL query (required unless type: patch)", false),
         ("platform", "Target operating system", false),
         ("critical", "Whether policy is critical", false),
         ("resolution", "How to fix policy failures", false),
@@ -622,6 +622,38 @@ fn complete_policy_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
         (
             "calendar_events_enabled",
             "Create calendar reminders",
+            false,
+        ),
+        (
+            "type",
+            "Set to 'patch' for Fleet Maintained App patch policies (query auto-generated)",
+            false,
+        ),
+        (
+            "fleet_maintained_app_slug",
+            "Fleet Maintained App slug for patch policies (e.g. zoom/darwin)",
+            false,
+        ),
+        ("version", "Pin a specific app version for patch policies", false),
+        (
+            "install_software",
+            "Install software when policy fails (true for patch policies, or object with package_path/fleet_maintained_app_slug)",
+            false,
+        ),
+        ("run_script", "Run a script when policy fails", false),
+        (
+            "labels_include_any",
+            "Target only hosts with any of these labels",
+            false,
+        ),
+        (
+            "labels_exclude_any",
+            "Exclude hosts with any of these labels",
+            false,
+        ),
+        (
+            "conditional_access_enabled",
+            "Enable conditional access for this policy",
             false,
         ),
     ];
