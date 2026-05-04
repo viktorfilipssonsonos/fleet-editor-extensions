@@ -634,14 +634,24 @@ staged_yaml="$(git diff --cached --name-only --diff-filter=ACMRT \
 
 echo "{banner}"
 
+# `flint check` takes a single path, so use `xargs -n 1` to invoke it
+# once per staged YAML file. Track failure across the batch via a marker
+# file (subshell exit codes can't propagate from `while`/`xargs` reliably).
+fail_marker="$(mktemp)"
+trap 'rm -f "$fail_marker"' EXIT
+
 if [ -n "$staged_yaml" ]; then
-    if ! echo "$staged_yaml" | xargs flint check{format_flag}{hook_mode_flag}; then
-        {on_fail}
-    fi
+    echo "$staged_yaml" | while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        [ -f "$f" ] || continue
+        flint check{format_flag}{hook_mode_flag} "$f" || echo 1 > "$fail_marker"
+    done
 else
-    if ! flint check{format_flag}{hook_mode_flag} . ; then
-        {on_fail}
-    fi
+    flint check{format_flag}{hook_mode_flag} . || echo 1 > "$fail_marker"
+fi
+
+if [ -s "$fail_marker" ]; then
+    {on_fail}
 fi
 
 exit 0
@@ -947,4 +957,78 @@ fn apply_fixes(
     }
 
     Ok(applied)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: the original generator used `xargs flint check` which
+    /// batches every staged YAML into a single invocation. `flint check`
+    /// only takes one positional path, so multi-file commits failed with
+    /// "unexpected argument" and the hook short-circuited. Generated scripts
+    /// must invoke flint once per file.
+    #[test]
+    fn pre_commit_script_invokes_flint_per_file() {
+        for (strict, json) in [(false, false), (true, false), (false, true), (true, true)] {
+            let script = build_pre_commit_script(strict, json);
+            assert!(
+                !script.contains("| xargs flint check"),
+                "regression: hook script (strict={strict}, json={json}) batches files via xargs"
+            );
+            assert!(
+                script.contains("while IFS= read -r f; do"),
+                "hook script (strict={strict}, json={json}) should invoke flint once per file"
+            );
+            // The per-file invocation must quote the file path.
+            assert!(
+                script.contains("flint check") && script.contains("\"$f\""),
+                "hook script (strict={strict}, json={json}) should pass each staged file as a quoted positional arg"
+            );
+        }
+    }
+
+    #[test]
+    fn pre_commit_script_modes_render_distinct_banners() {
+        let non_strict = build_pre_commit_script(false, false);
+        let strict = build_pre_commit_script(true, false);
+        assert!(non_strict.contains("warnings only, never blocks"));
+        assert!(strict.contains("strict — errors will block commits"));
+        assert_ne!(non_strict, strict, "modes must produce different scripts");
+    }
+
+    #[test]
+    fn pre_commit_script_strict_mode_has_explicit_block_path() {
+        // In strict mode the script must propagate flint's failure through
+        // the marker file and emit the human-readable "errors found —
+        // commit blocked" message before exiting 1.
+        let strict = build_pre_commit_script(true, false);
+        assert!(strict.contains("errors found — commit blocked."));
+        assert!(strict.contains("exit 1"));
+    }
+
+    #[test]
+    fn pre_commit_script_non_strict_never_blocks() {
+        // Non-strict scripts must NEVER include `exit 1` — even if flint
+        // returns an error, the marker check is a no-op.
+        let non_strict = build_pre_commit_script(false, false);
+        assert!(
+            !non_strict.contains("exit 1"),
+            "non-strict hook must not contain `exit 1` — it always passes"
+        );
+    }
+
+    #[test]
+    fn pre_commit_script_json_mode_passes_format_flag() {
+        let json = build_pre_commit_script(false, true);
+        assert!(
+            json.contains("--format=json"),
+            "json mode must pass --format=json to flint check"
+        );
+        let text = build_pre_commit_script(false, false);
+        assert!(
+            !text.contains("--format=json"),
+            "non-json mode must not pass --format=json"
+        );
+    }
 }
