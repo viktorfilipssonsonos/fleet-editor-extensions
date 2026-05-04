@@ -751,4 +751,131 @@ org_settings:
 "#;
         assert!(check(label_yaml, "lib/labels/test.yml").is_empty());
     }
+
+    // ---- Webhook settings per-fleet vs org-level ----
+
+    #[test]
+    fn test_per_fleet_failing_policies_webhook_accepted() {
+        // Per Fleet docs (yaml-files.md:1102), failing_policies_webhook can be
+        // configured per-fleet under `settings.webhook_settings`.
+        let yaml = r#"
+name: Workstations
+settings:
+  webhook_settings:
+    failing_policies_webhook:
+      enable_failing_policies_webhook: true
+      destination_url: https://example.org/hook
+      host_batch_size: 0
+"#;
+        let errors = check(yaml, "fleets/workstations.yml");
+        assert!(
+            errors.is_empty(),
+            "Per-fleet failing_policies_webhook should be accepted: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_per_fleet_activities_and_host_status_webhook_accepted() {
+        let yaml = r#"
+name: Workstations
+settings:
+  webhook_settings:
+    activities_webhook:
+      enable_activities_webhook: true
+      destination_url: https://example.org/a
+    host_status_webhook:
+      enable_host_status_webhook: true
+      destination_url: https://example.org/h
+      days_count: 7
+      host_percentage: 25
+"#;
+        let errors = check(yaml, "fleets/workstations.yml");
+        assert!(
+            errors.is_empty(),
+            "Per-fleet activities_webhook and host_status_webhook should be accepted: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_per_fleet_vulnerabilities_webhook_rejected() {
+        // Per Fleet docs (yaml-files.md:1151): vulnerabilities_webhook is org-only.
+        let yaml = r#"
+name: Workstations
+settings:
+  webhook_settings:
+    vulnerabilities_webhook:
+      enable_vulnerabilities_webhook: true
+      destination_url: https://example.org/v
+"#;
+        let errors = check(yaml, "fleets/workstations.yml");
+        assert!(
+            errors.iter().any(|e| e.message.contains("vulnerabilities_webhook")),
+            "Expected vulnerabilities_webhook to be flagged as unknown under per-fleet settings, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_policy_webhooks_and_tickets_enabled_accepted() {
+        // Per Fleet CHANGELOG: "Implemented `webhooks_and_tickets_enabled`
+        // flag for policies in GitOps." Cross-validated against
+        // testdata/generateGitops/expectedTeamPolicies.yaml:13.
+        let yaml = r#"
+- name: macOS - All available software updates installed
+  query: SELECT 1
+  platform: darwin
+  webhooks_and_tickets_enabled: true
+"#;
+        let errors = check(yaml, "platforms/macos/policies/all-software-updates-installed.yml");
+        assert!(
+            errors.is_empty(),
+            "webhooks_and_tickets_enabled is a valid policy field: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_policy_install_software_app_store_id_accepted() {
+        // Per gitops.go:231-236, install_software supports app_store_id.
+        // Cross-validated against expectedTeamPolicies.yaml:30-31.
+        let yaml = r#"
+- name: VPP install
+  query: SELECT 1
+  install_software:
+    app_store_id: "1234567890"
+"#;
+        let errors = check(yaml, "policies/test.yml");
+        assert!(
+            errors.is_empty(),
+            "install_software.app_store_id is valid: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_policy_team_field_accepted() {
+        let yaml = "policies:\n  - name: Test\n    query: SELECT 1\n    team: Engineering\n";
+        let errors = check(yaml, "default.yml");
+        assert!(errors.is_empty(), "team is a valid policy field: {:?}", errors);
+    }
+
+    #[test]
+    fn test_org_vulnerabilities_webhook_accepted() {
+        let yaml = r#"
+org_settings:
+  webhook_settings:
+    vulnerabilities_webhook:
+      enable_vulnerabilities_webhook: true
+      destination_url: https://example.org/v
+      host_batch_size: 0
+"#;
+        let errors = check(yaml, "default.yml");
+        assert!(
+            errors.is_empty(),
+            "Org-level vulnerabilities_webhook should be accepted: {:?}",
+            errors
+        );
+    }
 }

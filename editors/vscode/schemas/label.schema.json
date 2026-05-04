@@ -38,16 +38,20 @@
     },
     "criteria": {
       "type": "object",
-      "description": "Criteria for host_vitals labels (required when label_membership_type is 'host_vitals')",
+      "description": "Criteria for host_vitals labels (required when label_membership_type is 'host_vitals'). A single {vital, value} leaf — and/or composites are not yet supported.",
+      "required": ["vital", "value"],
       "properties": {
         "vital": {
           "type": "string",
-          "description": "Vital type"
+          "description": "The type of host vital. Fleet registers end_user_idp_group and end_user_idp_department.",
+          "enum": ["end_user_idp_group", "end_user_idp_department"]
         },
         "value": {
-          "description": "Vital value"
+          "type": "string",
+          "description": "Hosts with vital data matching this value will be added to the label."
         }
-      }
+      },
+      "additionalProperties": false
     }
   },
   "allOf": [

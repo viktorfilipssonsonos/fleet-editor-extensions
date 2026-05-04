@@ -129,76 +129,11 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "policies.query",
         FieldDoc {
             name: "query",
-            description: "The osquery SQL query that determines policy compliance. Required for standard policies; automatically generated (not needed) when type: patch.",
+            description: "The osquery SQL query that determines policy compliance. Returns results when the policy is violated (failing).",
             valid_values: None,
             example: Some("query: SELECT 1 FROM disk_encryption WHERE encrypted = 0"),
-            required: false,
+            required: true,
             field_type: "string (osquery SQL)",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "policies.type",
-        FieldDoc {
-            name: "type",
-            description: "Set to 'patch' to create a Fleet Maintained App patch policy. The SQL query is auto-generated — no query field needed.",
-            valid_values: Some(&["patch"]),
-            example: Some("type: patch"),
-            required: false,
-            field_type: "string",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "policies.fleet_maintained_app_slug",
-        FieldDoc {
-            name: "fleet_maintained_app_slug",
-            description: "The Fleet Maintained App slug to target with a patch policy (e.g. zoom/darwin, firefox/windows).",
-            valid_values: None,
-            example: Some("fleet_maintained_app_slug: zoom/darwin"),
-            required: false,
-            field_type: "string",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "policies.version",
-        FieldDoc {
-            name: "version",
-            description: "Pin a specific app version for a patch policy.",
-            valid_values: None,
-            example: Some("version: \"5.17.0\""),
-            required: false,
-            field_type: "string",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "policies.install_software",
-        FieldDoc {
-            name: "install_software",
-            description: "Automatically install software when this policy fails (Premium feature, team-level only). For patch policies, set to `true` to auto-install the Fleet Maintained App. For standard policies, provide an object with one of: `package_path`, `fleet_maintained_app_slug`, or `hash_sha256`.",
-            valid_values: Some(&["true", "package_path: <path>", "fleet_maintained_app_slug: <slug>", "hash_sha256: <hash>"]),
-            example: Some("install_software: true\n# or:\ninstall_software:\n  fleet_maintained_app_slug: zoom/darwin\n# or:\ninstall_software:\n  package_path: ../lib/firefox.package.yml"),
-            required: false,
-            field_type: "boolean or object",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "policies.run_script",
-        FieldDoc {
-            name: "run_script",
-            description: "Run a script when this policy fails (Premium feature, team-level only).",
-            valid_values: None,
-            example: Some("run_script:\n  path: ../lib/fix-compliance.sh"),
-            required: false,
-            field_type: "object",
             cli_hint: None,
         },
     );
@@ -259,11 +194,141 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "policies.calendar_events_enabled",
         FieldDoc {
             name: "calendar_events_enabled",
-            description: "Whether to create calendar events for policy failures to remind users to fix issues.",
+            description: "Whether to create calendar events for policy failures to remind users to fix issues. **Fleet-only** — per `yaml-files.md:245`, can only be configured on policies in a fleet file (`fleets/<name>.yml` or `fleets/unassigned.yml`), not in `default.yml`.",
             valid_values: Some(&["true", "false"]),
             example: Some("calendar_events_enabled: true"),
             required: false,
             field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.run_script",
+        FieldDoc {
+            name: "run_script",
+            description: "Run a script when the policy fails. **Fleet-only** (per `yaml-files.md:245`) — configure in a fleet file, not `default.yml`. The script must be defined in the same fleet. Requires Fleet Premium.",
+            valid_values: None,
+            example: Some("run_script:\n  path: ./disable-guest-account.sh"),
+            required: false,
+            field_type: "object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.software_title_id",
+        FieldDoc {
+            name: "software_title_id",
+            description: "ID of a software title to install when the policy fails. If the software has label-based targeting, the policy inherits those labels. Requires Fleet Premium.",
+            valid_values: None,
+            example: Some("software_title_id: 42"),
+            required: false,
+            field_type: "integer",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.script_id",
+        FieldDoc {
+            name: "script_id",
+            description: "ID of a script to run when the policy fails. Requires Fleet Premium.",
+            valid_values: None,
+            example: Some("script_id: 7"),
+            required: false,
+            field_type: "integer",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.conditional_access_enabled",
+        FieldDoc {
+            name: "conditional_access_enabled",
+            description: "When `true`, hosts failing this policy are blocked from accessing resources gated by conditional access. Requires Fleet Premium.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("conditional_access_enabled: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.conditional_access_bypass_enabled",
+        FieldDoc {
+            name: "conditional_access_bypass_enabled",
+            description: "When `true`, this policy's failures can be bypassed by conditional-access-enabled hosts. Critical policies never bypass. Requires Fleet Premium.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("conditional_access_bypass_enabled: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.webhooks_and_tickets_enabled",
+        FieldDoc {
+            name: "webhooks_and_tickets_enabled",
+            description: "When `true`, this policy is added to the failing-policies webhook (and any ticket integrations). GitOps-only convenience: at apply time Fleet adds this policy's ID to `failing_policies_webhook.policy_ids`. Cannot be combined with explicit `policy_ids` in webhook_settings.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("webhooks_and_tickets_enabled: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.team",
+        FieldDoc {
+            name: "team",
+            description: "The fleet (team) this policy belongs to. Renamed to `fleet` in newer Fleet versions — both keys are accepted for compatibility.",
+            valid_values: None,
+            example: Some("team: Engineering"),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.type",
+        FieldDoc {
+            name: "type",
+            description: "Policy type. `dynamic` (default) is a classic policy with an editable query. `patch` is tied to a Fleet-Maintained App via `fleet_maintained_app_slug` and auto-updates its query from the FMA metadata; on its own it only updates the policy — add `install_software: true` to install the app on failure. Patch policies require Fleet Premium.",
+            valid_values: Some(&["dynamic", "patch"]),
+            example: Some("type: patch"),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.fleet_maintained_app_slug",
+        FieldDoc {
+            name: "fleet_maintained_app_slug",
+            description: "The Fleet-Maintained App slug this patch policy tracks, typically in `name/platform` form. Required when `type: patch`. See https://github.com/fleetdm/fleet/tree/main/ee/maintained-apps/outputs for available slugs.",
+            valid_values: None,
+            example: Some("fleet_maintained_app_slug: zoom/darwin"),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "policies.install_software",
+        FieldDoc {
+            name: "install_software",
+            description: "Trigger a software install when the policy fails. Two forms: (1) mapping `{package_path}` or `{hash_sha256}` for a regular policy installing a custom package; (2) boolean `true` on a patch policy to install the Fleet-Maintained App. **Fleet-only** (per `yaml-files.md:245`) — configure in a fleet file, not `default.yml`. The software must be defined in the same fleet. Requires Fleet Premium.",
+            valid_values: None,
+            example: Some("install_software:\n  package_path: ./firefox.package.yml"),
+            required: false,
+            field_type: "object | boolean",
             cli_hint: None,
         },
     );
@@ -464,8 +529,8 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "labels.label_membership_type",
         FieldDoc {
             name: "label_membership_type",
-            description: "How hosts are assigned to this label: 'dynamic' (via query) or 'manual' (explicit assignment).",
-            valid_values: Some(&["dynamic", "manual"]),
+            description: "How hosts are assigned to this label: 'dynamic' (via query), 'manual' (explicit assignment), or 'host_vitals' (criteria on host vitals).",
+            valid_values: Some(&["dynamic", "manual", "host_vitals"]),
             example: Some("label_membership_type: dynamic"),
             required: false,
             field_type: "string",
@@ -482,6 +547,45 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
             example: Some("hosts:\n  - host1.example.com\n  - host2.example.com"),
             required: false,
             field_type: "array of strings",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "labels.criteria",
+        FieldDoc {
+            name: "criteria",
+            description: "Criteria for adding hosts to a host_vitals label. A single `{vital, value}` leaf — `and`/`or` composites are not yet supported by Fleet.",
+            valid_values: None,
+            example: Some("criteria:\n  vital: end_user_idp_department\n  value: Engineering"),
+            required: false,
+            field_type: "object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "labels.criteria.vital",
+        FieldDoc {
+            name: "vital",
+            description: "The type of host vital to use when creating a host vital label.",
+            valid_values: Some(&["end_user_idp_group", "end_user_idp_department"]),
+            example: Some("vital: end_user_idp_department"),
+            required: true,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "labels.criteria.value",
+        FieldDoc {
+            name: "value",
+            description: "Hosts with vital data matching this value will be added to the label.",
+            valid_values: None,
+            example: Some("value: Engineering"),
+            required: true,
+            field_type: "string",
             cli_hint: None,
         },
     );
@@ -938,8 +1042,8 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "labels.label_membership_type",
         FieldDoc {
             name: "label_membership_type",
-            description: "How hosts are assigned to this label. 'dynamic' uses the query, 'manual' requires explicit assignment.",
-            valid_values: Some(&["dynamic", "manual"]),
+            description: "How hosts are assigned to this label. 'dynamic' uses the query, 'manual' requires explicit assignment, 'host_vitals' uses a criteria expression.",
+            valid_values: Some(&["dynamic", "manual", "host_vitals"]),
             example: Some("label_membership_type: dynamic"),
             required: false,
             field_type: "string",
@@ -970,97 +1074,6 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
             description: "Whether to enable disk encryption (FileVault on macOS, BitLocker on Windows) via MDM.",
             valid_values: Some(&["true", "false"]),
             example: Some("enable_disk_encryption: true"),
-            required: false,
-            field_type: "boolean",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "controls.apple_require_hardware_attestation",
-        FieldDoc {
-            name: "apple_require_hardware_attestation",
-            description: "Require Apple hardware attestation for Apple devices. When enabled, Fleet verifies that devices are genuine Apple hardware before allowing MDM enrollment.",
-            valid_values: Some(&["true", "false"]),
-            example: Some("apple_require_hardware_attestation: true"),
-            required: false,
-            field_type: "boolean",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "controls.enable_recovery_lock_password",
-        FieldDoc {
-            name: "enable_recovery_lock_password",
-            description: "Enable Fleet to manage the macOS Recovery Lock password via MDM. When enabled, Fleet sets a random recovery lock password on managed Macs.",
-            valid_values: Some(&["true", "false"]),
-            example: Some("enable_recovery_lock_password: true"),
-            required: false,
-            field_type: "boolean",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "controls.windows_require_bitlocker_pin",
-        FieldDoc {
-            name: "windows_require_bitlocker_pin",
-            description: "Require a PIN for BitLocker disk encryption on Windows devices managed via MDM.",
-            valid_values: Some(&["true", "false"]),
-            example: Some("windows_require_bitlocker_pin: true"),
-            required: false,
-            field_type: "boolean",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "controls.windows_enabled_and_configured",
-        FieldDoc {
-            name: "windows_enabled_and_configured",
-            description: "Enable and configure Windows MDM. Must be set to true to manage Windows devices via Fleet MDM.",
-            valid_values: Some(&["true", "false"]),
-            example: Some("windows_enabled_and_configured: true"),
-            required: false,
-            field_type: "boolean",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "controls.windows_entra_tenant_ids",
-        FieldDoc {
-            name: "windows_entra_tenant_ids",
-            description: "List of Microsoft Entra (Azure AD) tenant IDs to allow for Windows MDM enrollment.",
-            valid_values: None,
-            example: Some("windows_entra_tenant_ids:\n  - \"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\""),
-            required: false,
-            field_type: "array of strings",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "controls.enable_turn_on_windows_mdm_manually",
-        FieldDoc {
-            name: "enable_turn_on_windows_mdm_manually",
-            description: "Allow end users to manually trigger Windows MDM enrollment from Fleet Desktop.",
-            valid_values: Some(&["true", "false"]),
-            example: Some("enable_turn_on_windows_mdm_manually: true"),
-            required: false,
-            field_type: "boolean",
-            cli_hint: None,
-        },
-    );
-
-    m.insert(
-        "controls.windows_migration_enabled",
-        FieldDoc {
-            name: "windows_migration_enabled",
-            description: "Enable migration of Windows hosts from a third-party MDM to Fleet MDM.",
-            valid_values: Some(&["true", "false"]),
-            example: Some("windows_migration_enabled: true"),
             required: false,
             field_type: "boolean",
             cli_hint: None,
@@ -1304,9 +1317,61 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         "team_settings.webhook_settings",
         FieldDoc {
             name: "webhook_settings",
-            description: "Webhook configuration for this fleet.",
+            description: "Per-fleet webhook configuration. Supports `activities_webhook`, `failing_policies_webhook`, `host_status_webhook`, and `interval`. `vulnerabilities_webhook` is org-only.",
             valid_values: None,
-            example: Some("webhook_settings:\n  failing_policies_webhook:\n    enable_failing_policies_webhook: true"),
+            example: Some("webhook_settings:\n  failing_policies_webhook:\n    enable_failing_policies_webhook: true\n    destination_url: https://example.com/hook"),
+            required: false,
+            field_type: "object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "webhook_settings.activities_webhook",
+        FieldDoc {
+            name: "activities_webhook",
+            description: "Fires when Fleet generates an activity. Can be configured at org or per-fleet level.",
+            valid_values: None,
+            example: Some("activities_webhook:\n  enable_activities_webhook: true\n  destination_url: https://example.org/webhook_handler"),
+            required: false,
+            field_type: "object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "webhook_settings.failing_policies_webhook",
+        FieldDoc {
+            name: "failing_policies_webhook",
+            description: "Fires for failing policies. Can be configured at org (`org_settings.webhook_settings`) or per-fleet (`settings.webhook_settings`).",
+            valid_values: None,
+            example: Some("failing_policies_webhook:\n  enable_failing_policies_webhook: true\n  destination_url: https://example.org/webhook_handler\n  policy_ids:\n    - 1\n    - 2"),
+            required: false,
+            field_type: "object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "webhook_settings.host_status_webhook",
+        FieldDoc {
+            name: "host_status_webhook",
+            description: "Fires when the percentage of offline hosts crosses a threshold. Can be configured at org or per-fleet level.",
+            valid_values: None,
+            example: Some("host_status_webhook:\n  enable_host_status_webhook: true\n  destination_url: https://example.org/webhook_handler\n  days_count: 7\n  host_percentage: 25"),
+            required: false,
+            field_type: "object",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "webhook_settings.vulnerabilities_webhook",
+        FieldDoc {
+            name: "vulnerabilities_webhook",
+            description: "Fires when Fleet detects a new vulnerability. **Org-only** — per Fleet docs, can only be configured under `org_settings.webhook_settings`.",
+            valid_values: None,
+            example: Some("vulnerabilities_webhook:\n  enable_vulnerabilities_webhook: true\n  destination_url: https://example.org/webhook_handler\n  host_batch_size: 0"),
             required: false,
             field_type: "object",
             cli_hint: None,
@@ -1811,15 +1876,147 @@ pub static FIELD_DOCS: Lazy<HashMap<&'static str, FieldDoc>> = Lazy::new(|| {
         },
     );
 
+    // ---- Patch policy version + agent_options.path + Windows/Apple MDM controls ----
+
+    m.insert(
+        "policies.version",
+        FieldDoc {
+            name: "version",
+            description: "Pin a specific Fleet-Maintained App version for a patch policy. Per yaml-files.md:147, when set, the version is included in the auto-generated query. Combined with `type: patch` and `fleet_maintained_app_slug`.",
+            valid_values: None,
+            example: Some("version: \"5.17.0\""),
+            required: false,
+            field_type: "string",
+            cli_hint: None,
+        },
+    );
+
     m.insert(
         "agent_options.path",
         FieldDoc {
             name: "path",
-            description: "Path to an external YAML file containing agent options configuration. Relative to the repository root.",
+            description: "Path to an external YAML file containing agent options. Relative to the file using it. Use this to keep `agent_options` in a separate `lib/agent-options.yml` file.",
             valid_values: None,
             example: Some("agent_options:\n  path: ../lib/agent-options.yml"),
             required: false,
             field_type: "string (file path)",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.apple_require_hardware_attestation",
+        FieldDoc {
+            name: "apple_require_hardware_attestation",
+            description: "When true, Fleet verifies that devices are genuine Apple hardware (via the Secure Enclave) before allowing MDM enrollment. Source: fleet/server/fleet/app.go (AppleRequireHardwareAttestation).",
+            valid_values: Some(&["true", "false"]),
+            example: Some("apple_require_hardware_attestation: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.enable_recovery_lock_password",
+        FieldDoc {
+            name: "enable_recovery_lock_password",
+            description: "When true, Fleet sets and rotates a random Recovery Lock password on eligible macOS hosts (yaml-files.md:369). Available in Fleet Premium.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("enable_recovery_lock_password: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.windows_require_bitlocker_pin",
+        FieldDoc {
+            name: "windows_require_bitlocker_pin",
+            description: "Require end users on Windows hosts to set a BitLocker PIN at startup. `enable_disk_encryption` must be true. Default: false (yaml-files.md:368).",
+            valid_values: Some(&["true", "false"]),
+            example: Some("windows_require_bitlocker_pin: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.windows_enabled_and_configured",
+        FieldDoc {
+            name: "windows_enabled_and_configured",
+            description: "Master switch for Windows MDM. Must be true to manage Windows hosts via Fleet MDM.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("windows_enabled_and_configured: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.windows_entra_tenant_ids",
+        FieldDoc {
+            name: "windows_entra_tenant_ids",
+            description: "Microsoft Entra (Azure AD) tenant IDs allowed for Windows MDM enrollment.",
+            valid_values: None,
+            example: Some("windows_entra_tenant_ids:\n  - 4e342a0d-ec1a-4353-bdeb-785542e0a8fb"),
+            required: false,
+            field_type: "array of strings",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.enable_turn_on_windows_mdm_manually",
+        FieldDoc {
+            name: "enable_turn_on_windows_mdm_manually",
+            description: "When true, end users must manually enable MDM in Windows Settings > Access work or school. When false, Fleet auto-enables MDM for unmanaged Windows hosts. Org-only (yaml-files.md:365).",
+            valid_values: Some(&["true", "false"]),
+            example: Some("enable_turn_on_windows_mdm_manually: false"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "controls.windows_migration_enabled",
+        FieldDoc {
+            name: "windows_migration_enabled",
+            description: "When true, automatically migrate Windows hosts connected to a third-party MDM. Requires `enable_turn_on_windows_mdm_manually: false`. Org-only (yaml-files.md:366).",
+            valid_values: Some(&["true", "false"]),
+            example: Some("windows_migration_enabled: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "macos_setup.require_all_software_macos",
+        FieldDoc {
+            name: "require_all_software_macos",
+            description: "When true, cancel macOS setup experience if any software install fails. New canonical name (`require_all_software` is the legacy form). Source: fleet/server/fleet/apple_mdm.go:529.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("require_all_software_macos: true"),
+            required: false,
+            field_type: "boolean",
+            cli_hint: None,
+        },
+    );
+
+    m.insert(
+        "macos_setup.require_all_software_windows",
+        FieldDoc {
+            name: "require_all_software_windows",
+            description: "Windows counterpart to `require_all_software_macos` — cancel setup if any software install fails on Windows. Source: fleet/server/fleet/apple_mdm.go:530.",
+            valid_values: Some(&["true", "false"]),
+            example: Some("require_all_software_windows: true"),
+            required: false,
+            field_type: "boolean",
             cli_hint: None,
         },
     );
@@ -1856,8 +2053,9 @@ pub fn get_field_doc(path: &str) -> Option<&'static FieldDoc> {
         }
     }
 
-    // Try just the field name (last segment), requiring an exact segment boundary.
-    // Prefer entries that share the same top-level context as the requested path.
+    // Try just the field name (last segment), requiring exact segment
+    // boundaries so `webhook` doesn't match `failing_policies_webhook`.
+    // Prefer entries that share the same top-level context as the request.
     let field_name = path.split('.').next_back().unwrap_or(path);
     let segment_suffix = format!(".{}", field_name);
     let context_prefix = path.split('.').next().unwrap_or("");
@@ -1869,7 +2067,7 @@ pub fn get_field_doc(path: &str) -> Option<&'static FieldDoc> {
             return Some(doc);
         }
     }
-    // No context-matching entry found — fall back to any segment match
+    // No context-matching entry — fall back to any segment match.
     for (key, doc) in FIELD_DOCS.iter() {
         if key.ends_with(segment_suffix.as_str()) || *key == field_name {
             return Some(doc);

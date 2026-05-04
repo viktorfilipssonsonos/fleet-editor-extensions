@@ -25,6 +25,8 @@ enum CompletionContext {
     QueryField,
     /// Inside a labels array item
     LabelField,
+    /// Inside a labels[].criteria block (or nested and/or inside it)
+    CriteriaField,
     /// Inside software section (choosing packages/app_store_apps/fleet_maintained_apps)
     SoftwareSection,
     /// Inside software.packages array item
@@ -139,6 +141,7 @@ pub fn complete_at_with_context(
         CompletionContext::PolicyField => complete_policy_fields(line, col_idx),
         CompletionContext::QueryField => complete_query_fields(line, col_idx),
         CompletionContext::LabelField => complete_label_fields(line, col_idx),
+        CompletionContext::CriteriaField => complete_criteria_fields(line, col_idx),
         CompletionContext::SoftwareSection => complete_software_section(),
         CompletionContext::SoftwarePackageField => complete_software_package_fields(line, col_idx),
         CompletionContext::AppStoreAppField => complete_app_store_app_fields(line, col_idx),
@@ -440,6 +443,9 @@ fn context_path_to_completion_context(path: Option<&str>) -> CompletionContext {
     match path {
         Some(p) if p == "policies" || p.ends_with(".policies") => CompletionContext::PolicyField,
         Some(p) if p == "queries" || p.ends_with(".queries") => CompletionContext::QueryField,
+        Some(p) if p == "labels.criteria" || p.ends_with(".criteria") => {
+            CompletionContext::CriteriaField
+        }
         Some(p) if p == "labels" || p.ends_with(".labels") => CompletionContext::LabelField,
         Some("software") => CompletionContext::SoftwareSection,
         Some(p) if p == "software.packages" || p.ends_with(".packages") => {
@@ -599,12 +605,25 @@ fn complete_top_level_fields(future_names: bool) -> Vec<CompletionItem> {
 fn complete_policy_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
     // Check if we're in value position
     if let Some(key) = get_key_at_cursor(line, col_idx) {
-        if key.as_str() == "platform" {
-            return complete_platform_values();
+        match key.as_str() {
+            "platform" => return complete_platform_values(),
+            "type" => {
+                return vec![
+                    create_value_completion("dynamic", "Classic policy with an editable query"),
+                    create_value_completion(
+                        "patch",
+                        "Patch policy tied to a Fleet-Maintained App (requires fleet_maintained_app_slug)",
+                    ),
+                ];
+            }
+            _ => {}
         }
     }
 
-    // Policies can be either inline definitions OR path references
+    // Policies can be either inline definitions OR path references.
+    // Automations (run_script / install_software / calendar_events_enabled)
+    // are only valid in fleet files per yaml-files.md:245 — still surfaced
+    // here because the LSP can't reliably tell which file it's editing.
     let fields = [
         ("path", "Reference to external policy YAML file", false),
         (
@@ -614,48 +633,56 @@ fn complete_policy_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
         ),
         ("name", "Policy display name (for inline definitions)", true),
         ("description", "What this policy checks", false),
-        ("query", "osquery SQL query (required unless type: patch)", false),
+        ("query", "osquery SQL query (auto-generated when type: patch)", true),
         ("platform", "Target operating system", false),
-        ("critical", "Whether policy is critical", false),
+        ("critical", "Whether policy is critical (Fleet Premium)", false),
         ("resolution", "How to fix policy failures", false),
         ("team", "Team this policy belongs to", false),
         (
-            "calendar_events_enabled",
-            "Create calendar reminders",
-            false,
-        ),
-        (
             "type",
-            "Set to 'patch' for Fleet Maintained App patch policies (query auto-generated)",
+            "Policy type: dynamic (default) or patch",
             false,
         ),
         (
             "fleet_maintained_app_slug",
-            "Fleet Maintained App slug for patch policies (e.g. zoom/darwin)",
+            "FMA slug for patch policies (e.g. zoom/darwin)",
             false,
         ),
-        ("version", "Pin a specific app version for patch policies", false),
+        ("software_title_id", "ID of software to install on failure", false),
+        ("script_id", "ID of script to run on failure", false),
         (
             "install_software",
-            "Install software when policy fails (true for patch policies, or object with package_path/fleet_maintained_app_slug)",
-            false,
-        ),
-        ("run_script", "Run a script when policy fails", false),
-        (
-            "labels_include_any",
-            "Target only hosts with any of these labels",
+            "Install a custom package or FMA on policy failure (fleet-only)",
             false,
         ),
         (
-            "labels_exclude_any",
-            "Exclude hosts with any of these labels",
+            "run_script",
+            "Run a script on policy failure (fleet-only)",
+            false,
+        ),
+        (
+            "calendar_events_enabled",
+            "Create calendar reminders (fleet-only)",
             false,
         ),
         (
             "conditional_access_enabled",
-            "Enable conditional access for this policy",
+            "Gate resource access on policy pass (Fleet Premium)",
             false,
         ),
+        (
+            "conditional_access_bypass_enabled",
+            "Allow conditional-access bypass (Fleet Premium)",
+            false,
+        ),
+        ("labels_include_any", "Target hosts with any of these labels", false),
+        ("labels_exclude_any", "Exclude hosts with any of these labels", false),
+        (
+            "webhooks_and_tickets_enabled",
+            "Add this policy to the failing-policies webhook (GitOps convenience)",
+            false,
+        ),
+        ("team", "Fleet (team) this policy belongs to", false),
     ];
 
     fields
@@ -706,6 +733,10 @@ fn complete_label_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
                 return vec![
                     create_value_completion("dynamic", "Membership via query"),
                     create_value_completion("manual", "Explicit host assignment"),
+                    create_value_completion(
+                        "host_vitals",
+                        "Membership via host vital criteria",
+                    ),
                 ];
             }
             _ => {}
@@ -720,8 +751,49 @@ fn complete_label_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
         ("description", "What hosts this label identifies", false),
         ("query", "osquery query for dynamic labels", false),
         ("platform", "Target operating system", false),
-        ("label_membership_type", "dynamic or manual", false),
+        (
+            "label_membership_type",
+            "dynamic, manual, or host_vitals",
+            false,
+        ),
         ("hosts", "List of hosts (manual labels)", false),
+        ("criteria", "Host vital criteria (host_vitals labels)", false),
+    ];
+
+    fields
+        .iter()
+        .map(|(name, desc, required)| create_field_completion(name, desc, *required))
+        .collect()
+}
+
+/// Complete host-vital criteria fields (inside labels[].criteria).
+///
+/// Per Fleet's REST API docs, a criteria is a single `{vital, value}` leaf.
+/// `and`/`or` are in the Go struct but rejected at parse time, so we don't
+/// suggest them here.
+fn complete_criteria_fields(line: &str, col_idx: usize) -> Vec<CompletionItem> {
+    if let Some(key) = get_key_at_cursor(line, col_idx) {
+        if key.as_str() == "vital" {
+            return vec![
+                create_value_completion(
+                    "end_user_idp_group",
+                    "Host's IdP group (from end-user SSO)",
+                ),
+                create_value_completion(
+                    "end_user_idp_department",
+                    "Host's IdP department (from end-user SSO)",
+                ),
+            ];
+        }
+    }
+
+    let fields = [
+        (
+            "vital",
+            "Host vital identifier (end_user_idp_group or end_user_idp_department)",
+            true,
+        ),
+        ("value", "Hosts whose vital matches this value join the label", true),
     ];
 
     fields

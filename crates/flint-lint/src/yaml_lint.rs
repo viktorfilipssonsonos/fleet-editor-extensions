@@ -246,7 +246,47 @@ impl Rule for YamlColonsRule {
 ///
 /// Example: `platform:` with nothing after the colon. This is valid YAML
 /// but often a mistake in Fleet configs where a value was intended.
+///
+/// Fleet collection keys (`configuration_profiles:`, `certificates:`, `scripts:`,
+/// `packages:`, `custom_settings:`, `labels_include_any:`, etc.) are commonly
+/// and intentionally left empty to mean "no items" — those are skipped.
 pub struct YamlEmptyValuesRule;
+
+/// Keys where an empty value is idiomatic Fleet GitOps (collection = no items).
+/// Matched by name only; empty values on these keys are never flagged.
+const FLEET_EMPTY_OK_KEYS: &[&str] = &[
+    // Top-level collections
+    "policies",
+    "queries",
+    "reports",
+    "labels",
+    "software",
+    // Software sub-collections
+    "packages",
+    "app_store_apps",
+    "fleet_maintained_apps",
+    // Controls / MDM collections
+    "configuration_profiles",
+    "custom_settings",
+    "certificates",
+    "scripts",
+    // Label targeting
+    "labels_include_any",
+    "labels_include_all",
+    "labels_exclude_any",
+    // Membership
+    "hosts",
+    "host_ids",
+    "categories",
+    // Integrations
+    "apple_business_manager",
+    "volume_purchasing_program",
+    "integrations",
+    "google_calendar",
+    "jira",
+    "zendesk",
+    "webhook_settings",
+];
 
 impl Rule for YamlEmptyValuesRule {
     fn name(&self) -> &'static str {
@@ -308,6 +348,11 @@ impl Rule for YamlEmptyValuesRule {
                     continue;
                 }
 
+                // Fleet collection keys: empty means "no items" — not a mistake.
+                if FLEET_EMPTY_OK_KEYS.contains(&key_clean) {
+                    continue;
+                }
+
                 // Value is empty or just a comment
                 let is_empty = value_part.is_empty() || value_part.starts_with('#');
 
@@ -341,7 +386,7 @@ impl Rule for YamlEmptyValuesRule {
                     .with_location(line_num, colon_pos + 2)
                     .with_rule_code("yaml-empty-values".to_string())
                     .with_help(
-                        "If intentional, add an explicit `null`. Otherwise, provide a value.",
+                        "Provide a value, or remove the key if not needed.",
                     ),
                 );
             }
@@ -646,6 +691,45 @@ mod tests {
         let errors = check_rule(&YamlEmptyValuesRule, source);
         assert_eq!(errors.len(), 1);
         assert!(errors[0].message.contains("platform"));
+    }
+
+    #[test]
+    fn empty_values_fleet_collection_keys_not_flagged() {
+        // Fleet-idiomatic: empty collection keys mean "no items" — don't flag.
+        let source = "android_settings:\n  configuration_profiles:\n  certificates:\n\n  scripts:\n";
+        let errors = check_rule(&YamlEmptyValuesRule, source);
+        assert!(
+            errors.is_empty(),
+            "Fleet collection keys should not trigger empty-values: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn empty_values_top_level_collections_not_flagged() {
+        // `software:`, `policies:`, `labels:`, `queries:` at top level with no
+        // children are valid ("no items") — don't flag.
+        let source = "software:\n\npolicies:\n\nlabels:\n\nqueries:\n";
+        let errors = check_rule(&YamlEmptyValuesRule, source);
+        assert!(
+            errors.is_empty(),
+            "Top-level empty collections should not trigger empty-values: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn empty_values_help_does_not_suggest_null() {
+        // The help text should not push users toward `null` — empty keys in
+        // Fleet GitOps are fixed by providing a value or removing the key.
+        let source = "query:\n";
+        let errors = check_rule(&YamlEmptyValuesRule, source);
+        assert_eq!(errors.len(), 1);
+        let help = errors[0].help.as_deref().unwrap_or("");
+        assert!(
+            !help.to_lowercase().contains("null"),
+            "help should not mention null, got: {help}"
+        );
     }
 
     // ── Auto-fix tests ──────────────────────────────────────────
