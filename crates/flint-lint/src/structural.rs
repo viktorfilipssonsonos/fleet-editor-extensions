@@ -878,4 +878,35 @@ org_settings:
             errors
         );
     }
+
+    // -- Issue #3: agent_options.script_execution_timeout + extensions --
+
+    #[test]
+    fn test_agent_options_script_execution_timeout_accepted() {
+        // Regression for issue #3. Source: server/fleet/agent_options.go
+        let yaml = r#"
+agent_options:
+  script_execution_timeout: 18000
+  config:
+    options:
+      logger_plugin: filesystem
+"#;
+        let errors = check(yaml, "default.yml");
+        assert!(
+            errors.is_empty(),
+            "script_execution_timeout is a valid agent_options key: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_agent_options_extensions_accepted() {
+        let yaml = "agent_options:\n  extensions:\n    plat: example\n";
+        let errors = check(yaml, "default.yml");
+        assert!(
+            errors.is_empty(),
+            "extensions is a valid agent_options key: {:?}",
+            errors
+        );
+    }
 }

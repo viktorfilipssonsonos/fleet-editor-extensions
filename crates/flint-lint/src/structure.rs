@@ -649,15 +649,21 @@ fn team_settings_strict() -> SchemaNode {
 }
 
 fn agent_options_inline() -> SchemaNode {
+    // Source of truth: server/fleet/agent_options.go AgentOptions struct.
+    // The `agent_options` mapping can be either an inline object or a
+    // `path:` reference to a separate lib YAML file (yaml-files.md
+    // agent_options section).
     mapping(vec![
-        // Per yaml-files.md (agent_options section): the `agent_options`
-        // mapping can be either an inline object or a `path:` reference
-        // pointing at a separate lib YAML file.
         ("path", leaf()),
         ("config", open_mapping()),
         ("overrides", open_mapping()),
         ("command_line_flags", open_mapping()),
         ("update_channels", open_mapping()),
+        // Maximum allowed: 18000 seconds (5h). Validated by Fleet at apply time.
+        ("script_execution_timeout", leaf()),
+        // osquery extensions configuration. Open mapping because Fleet
+        // accepts arbitrary platform/extension nesting.
+        ("extensions", open_mapping()),
     ])
 }
 
@@ -755,8 +761,15 @@ pub static KEY_REGISTRY: Lazy<KeyRegistry> = Lazy::new(|| {
     reg.register("queries", "");
     reg.register("reports", "");
     reg.register("agent_options", "");
-    // agent_options can be inline OR a path reference (yaml-files.md agent_options).
+    // agent_options children. Source: server/fleet/agent_options.go AgentOptions struct.
+    // Inline OR a `path:` reference pointing at a lib YAML file.
     reg.register("path", "agent_options");
+    reg.register("config", "agent_options");
+    reg.register("overrides", "agent_options");
+    reg.register("command_line_flags", "agent_options");
+    reg.register("update_channels", "agent_options");
+    reg.register("script_execution_timeout", "agent_options");
+    reg.register("extensions", "agent_options");
     reg.register("controls", "");
     reg.register("software", "");
     reg.register("org_settings", "");

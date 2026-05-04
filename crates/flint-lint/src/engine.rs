@@ -996,4 +996,60 @@ config:
             report.errors
         );
     }
+
+    // -- Issue #5: .fleetlint.toml is loaded by Linter::from_path --
+
+    #[test]
+    fn test_from_path_loads_fleetlint_toml() {
+        // Without config a missing-query policy yields a `required-fields`
+        // error. With `[rules.required-fields] enabled = false` the rule
+        // should be silenced. Regression for issue #5.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".fleetlint.toml"),
+            "[rules]\ndisabled = [\"required-fields\"]\n",
+        )
+        .unwrap();
+        let yaml_file = dir.path().join("default.yml");
+        std::fs::write(&yaml_file, "policies:\n  - name: missing query\n").unwrap();
+
+        let linter = Linter::from_path(&yaml_file);
+        let report = linter.lint_file(&yaml_file).unwrap();
+        let has_required_fields_error = report
+            .errors
+            .iter()
+            .any(|e| e.rule_code.as_deref() == Some("required-fields"));
+        assert!(
+            !has_required_fields_error,
+            "required-fields rule should be disabled by .fleetlint.toml; got errors: {:?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn test_new_does_not_load_config() {
+        // Documents the historical behavior of Linter::new(): it does NOT
+        // load .fleetlint.toml. CLI now uses from_path() (issue #5 fix);
+        // keep this test so any future "make new() load config" change is
+        // a deliberate decision.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".fleetlint.toml"),
+            "[rules]\ndisabled = [\"required-fields\"]\n",
+        )
+        .unwrap();
+        let yaml_file = dir.path().join("default.yml");
+        std::fs::write(&yaml_file, "policies:\n  - name: missing query\n").unwrap();
+
+        let linter = Linter::new();
+        let report = linter.lint_file(&yaml_file).unwrap();
+        let has_required_fields_error = report
+            .errors
+            .iter()
+            .any(|e| e.rule_code.as_deref() == Some("required-fields"));
+        assert!(
+            has_required_fields_error,
+            "Linter::new() ignores .fleetlint.toml — required-fields should still fire"
+        );
+    }
 }

@@ -182,7 +182,9 @@ async fn main() -> Result<()> {
 
             use colored::Colorize;
 
-            let linter = Linter::new();
+            // Use `from_path` so any `.fleetlint.toml` discovered in or above
+            // the target path is loaded — `Linter::new()` skips it (issue #5).
+            let linter = Linter::from_path(&path);
             let json_mode = format == "json";
 
             if path.is_file() {

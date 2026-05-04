@@ -169,7 +169,8 @@ pub static OSQUERY_TABLES: Lazy<HashMap<&'static str, OsqueryTable>> = Lazy::new
         "usb_devices",
         OsqueryTable {
             name: "usb_devices",
-            platforms: vec!["darwin", "linux", "windows"],
+            // Per fleetdm/fleet schema/osquery_fleet_schema.json: darwin + linux only.
+            platforms: vec!["darwin", "linux"],
             description: "USB devices",
         },
     );
