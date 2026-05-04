@@ -41,6 +41,17 @@ enum Commands {
         /// Output format (text, json)
         #[arg(short, long, default_value = "text")]
         format: String,
+
+        /// Run as a non-blocking git hook: print diagnostics but always exit 0,
+        /// so warnings/errors don't block commits. Suitable for `.git/hooks/pre-commit`.
+        #[arg(long)]
+        hook_mode: bool,
+    },
+
+    /// Manage git hooks for non-blocking flint validation in a Fleet GitOps repo.
+    Hooks {
+        #[command(subcommand)]
+        action: HooksAction,
     },
 
     /// Start language server (called by editor extensions, not directly)
@@ -129,6 +140,21 @@ enum Commands {
     },
 }
 
+#[derive(Subcommand)]
+enum HooksAction {
+    /// Install a non-blocking pre-commit hook in the current git repo.
+    /// The hook runs `flint check --hook-mode` against staged YAML files
+    /// (or the whole repo if none are staged) and prints diagnostics
+    /// without blocking the commit.
+    Install {
+        /// Overwrite an existing hook without prompting
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// Remove flint's pre-commit hook from the current git repo.
+    Uninstall,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -139,6 +165,7 @@ async fn main() -> Result<()> {
             fix,
             unsafe_fixes,
             format,
+            hook_mode,
         } => {
             use linter::Linter;
 
@@ -182,7 +209,7 @@ async fn main() -> Result<()> {
                     report.print(Some(&source));
                 }
 
-                if report.has_errors() {
+                if report.has_errors() && !hook_mode {
                     std::process::exit(1);
                 }
             } else if path.is_dir() {
@@ -255,13 +282,18 @@ async fn main() -> Result<()> {
                     println!("  {} info", total_infos.to_string().blue());
                 }
 
-                if total_errors > 0 {
+                if total_errors > 0 && !hook_mode {
                     std::process::exit(1);
                 }
             } else {
                 anyhow::bail!("Path does not exist: {}", path.display());
             }
         }
+
+        Commands::Hooks { action } => match action {
+            HooksAction::Install { force } => install_pre_commit_hook(force)?,
+            HooksAction::Uninstall => uninstall_pre_commit_hook()?,
+        },
 
         Commands::Lsp { debug, stdio: _ } => {
             // Set up logging if debug mode is enabled
@@ -526,6 +558,103 @@ async fn main() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Embedded pre-commit hook template. Bundled at build time so `flint
+/// hooks install` works without the user having a copy of the repo.
+const PRE_COMMIT_TEMPLATE: &str =
+    include_str!("../../scripts/templates/pre-commit");
+
+/// Locate the `.git/hooks/` directory for the current repo.
+///
+/// Walks up from the current working directory looking for a `.git` entry.
+/// Errors out with a clear message if not in a git repo.
+fn find_git_hooks_dir() -> Result<PathBuf> {
+    let mut dir = std::env::current_dir()?;
+    loop {
+        let git = dir.join(".git");
+        if git.is_dir() {
+            return Ok(git.join("hooks"));
+        }
+        // Some setups (worktrees, submodules) make `.git` a file pointing
+        // at the real gitdir.
+        if git.is_file() {
+            let contents = std::fs::read_to_string(&git)?;
+            if let Some(gitdir) = contents.strip_prefix("gitdir: ") {
+                let gitdir = PathBuf::from(gitdir.trim());
+                let resolved = if gitdir.is_absolute() {
+                    gitdir
+                } else {
+                    dir.join(gitdir)
+                };
+                return Ok(resolved.join("hooks"));
+            }
+        }
+        if !dir.pop() {
+            anyhow::bail!(
+                "Not inside a git repository (no .git found from current directory upward)"
+            );
+        }
+    }
+}
+
+fn install_pre_commit_hook(force: bool) -> Result<()> {
+    use colored::Colorize;
+    use std::os::unix::fs::PermissionsExt;
+
+    let hooks_dir = find_git_hooks_dir()?;
+    std::fs::create_dir_all(&hooks_dir)?;
+    let hook_path = hooks_dir.join("pre-commit");
+
+    if hook_path.exists() && !force {
+        let existing = std::fs::read_to_string(&hook_path).unwrap_or_default();
+        if existing.contains("flint pre-commit hook") {
+            println!(
+                "{} flint pre-commit hook already installed at {}\n  Re-run with --force to overwrite.",
+                "ℹ".blue(),
+                hook_path.display()
+            );
+            return Ok(());
+        }
+        anyhow::bail!(
+            "A pre-commit hook already exists at {} and was not authored by flint.\nRe-run with --force to overwrite, or move it aside first.",
+            hook_path.display()
+        );
+    }
+
+    std::fs::write(&hook_path, PRE_COMMIT_TEMPLATE)?;
+    let mut perms = std::fs::metadata(&hook_path)?.permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&hook_path, perms)?;
+
+    println!(
+        "{} Installed flint pre-commit hook at {}",
+        "✓".green(),
+        hook_path.display()
+    );
+    println!("  • Diagnostics print on every commit, but the hook never blocks.");
+    println!("  • Remove with: flint hooks uninstall");
+    Ok(())
+}
+
+fn uninstall_pre_commit_hook() -> Result<()> {
+    use colored::Colorize;
+
+    let hook_path = find_git_hooks_dir()?.join("pre-commit");
+    if !hook_path.exists() {
+        println!("{} No pre-commit hook found at {}", "ℹ".blue(), hook_path.display());
+        return Ok(());
+    }
+    let contents = std::fs::read_to_string(&hook_path).unwrap_or_default();
+    if !contents.contains("flint pre-commit hook") {
+        anyhow::bail!(
+            "Pre-commit hook at {} was not authored by flint — refusing to remove it.\nDelete it manually if intended.",
+            hook_path.display()
+        );
+    }
+    std::fs::remove_file(&hook_path)?;
+    println!("{} Removed flint pre-commit hook from {}", "✓".green(), hook_path.display());
     Ok(())
 }
 
